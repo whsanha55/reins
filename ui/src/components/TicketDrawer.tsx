@@ -36,6 +36,8 @@ export function TicketDrawer({
   const [editing, setEditing] = useState(false);
   const [focused, setFocused] = useState(false);
   useEffect(() => setDesc(ticket?.description ?? ""), [ticket?.description]);
+  // 다른 티켓으로 전환 시 편집모드 해제(드로어 인스턴스 재사용).
+  useEffect(() => setEditing(false), [ticketId]);
   const saveDesc = useMutation({
     mutationFn: () => api.tickets.update(ticketId, { description: desc }),
     onSuccess: () => {
