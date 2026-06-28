@@ -2,7 +2,9 @@
 # build context = 레포 루트. server/Dockerfile(context=루트) + ui/Dockerfile(context=./ui).
 services:
   migrate:                       # schema.sql 멱등 적용 (oneshot). CREATE TABLE IF NOT EXISTS라 재실행 안전.
-    build: .
+    build:
+      context: .
+      dockerfile: server/Dockerfile
     env_file: .env
     environment:
       DB_HOST: postgres
@@ -12,7 +14,9 @@ services:
     networks: [infra]
 
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: server/Dockerfile
     init: true
     restart: unless-stopped
     env_file: .env
