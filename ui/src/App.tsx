@@ -9,11 +9,12 @@ import { DecisionQueue } from "./components/DecisionQueue";
 import { DeployView } from "./components/DeployView";
 import { TicketForm } from "./components/TicketForm";
 import { TicketDrawer } from "./components/TicketDrawer";
+import { SprintHistory } from "./components/SprintHistory";
 import { useToast } from "./components/ui";
 import { api, getToken, setToken } from "./api";
 import { useRoute, type Route } from "./router";
 
-type Tab = "board" | "decisions" | "new" | "deploy";
+type Tab = "board" | "decisions" | "new" | "deploy" | "sprints";
 
 export default function App() {
   // ponytail: 게이트/본체 분리 — React hooks 순서 위반 방지(gate 시 미호출 hook 방지).
@@ -60,7 +61,9 @@ function Main() {
         ? "deploy"
         : route.view === "new"
           ? "new"
-          : "board";
+          : route.view === "sprints"
+            ? "sprints"
+            : "board";
   const openTicketId = route.view === "ticket" ? route.tid : null;
 
   const goProject = (id: number | null) => navigate(id == null ? "/" : `/project/${id}`);
@@ -92,6 +95,12 @@ function Main() {
             Deploy
           </TabBtn>
           <TabBtn
+            active={tab === "sprints"}
+            onClick={() => navigate(lastPid ? `/project/${lastPid}/sprints` : "/")}
+          >
+            Sprints
+          </TabBtn>
+          <TabBtn
             active={tab === "new"}
             onClick={() => navigate(lastPid ? `/project/${lastPid}/new` : "/")}
           >
@@ -112,6 +121,18 @@ function Main() {
           {tab === "board" && !project && (
             <div className="flex h-full items-center justify-center text-sm text-dim">
               왼쪽에서 프로젝트를 선택하거나 만드세요.
+            </div>
+          )}
+          {tab === "sprints" && project && (
+            <SprintHistory
+              projectId={project.id}
+              projectName={project.name}
+              onOpenTicket={(id) => navigate(`/project/${project.id}/t/${id}`)}
+            />
+          )}
+          {tab === "sprints" && !project && (
+            <div className="flex h-full items-center justify-center text-sm text-dim">
+              왼쪽에서 프로젝트를 선택하세요.
             </div>
           )}
           {tab === "decisions" && <DecisionQueue toast={toast} />}
@@ -140,7 +161,9 @@ function Main() {
 }
 
 function routePid(route: Route): number | null {
-  return route.view === "board" || route.view === "new" || route.view === "ticket" ? route.pid : null;
+  return route.view === "board" || route.view === "new" || route.view === "ticket" || route.view === "sprints"
+    ? route.pid
+    : null;
 }
 
 function TabBtn({
