@@ -109,6 +109,12 @@ export function Board({
           </button>
         </span>
         <div className="ml-auto flex items-center gap-2 text-xs">
+          <button
+            onClick={onNewTicket}
+            className="rounded bg-cta px-2 py-1 font-medium text-white hover:bg-ink"
+          >
+            + 새 티켓
+          </button>
           <label className="flex items-center gap-1">
             <input
               type="checkbox"
