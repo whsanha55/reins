@@ -1,5 +1,5 @@
 // ponytail: history API 기반 path 라우터. react-router 의존성 없이 URL ↔ 뷰 동기화.
-// 라우트: / (home) · /project/:pid (board) · /project/:pid/new · /project/:pid/t/:tid (drawer) · /decisions
+// 라우트: / (home) · /project/:pid (board) · /project/:pid/new · /project/:pid/t/:tid (drawer) · /decisions · /deploy
 import { useEffect, useState } from "react";
 
 export type Route =
@@ -7,12 +7,14 @@ export type Route =
   | { view: "board"; pid: number }
   | { view: "new"; pid: number }
   | { view: "decisions" }
+  | { view: "deploy" }
   | { view: "ticket"; pid: number; tid: number };
 
 export function parsePath(path: string): Route {
   const seg = path.split("/").filter(Boolean);
   if (seg.length === 0) return { view: "home" };
   if (seg[0] === "decisions") return { view: "decisions" };
+  if (seg[0] === "deploy") return { view: "deploy" };
   if (seg[0] === "project" && seg[1]) {
     const pid = Number(seg[1]);
     if (!Number.isFinite(pid)) return { view: "home" };

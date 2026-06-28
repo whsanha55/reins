@@ -124,15 +124,20 @@ export function Sidebar({
   );
 }
 
-// 프로젝트 편집 모달 — 이름 + 설명/Git 주소(자유 텍스트). 저장 시 projects 쿼리 갱신.
+// 프로젝트 편집 모달 — 이름 + 설명/Git 주소 + host_path(deploy 경로). 저장 시 projects 쿼리 갱신.
 function ProjectEditModal({ project, onClose }: { project: Project; onClose: () => void }) {
   const qc = useQueryClient();
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description ?? "");
+  const [hostPath, setHostPath] = useState(project.host_path ?? "");
 
   const update = useMutation({
     mutationFn: () =>
-      api.projects.update(project.id, { name: name.trim(), description: description.trim() }),
+      api.projects.update(project.id, {
+        name: name.trim(),
+        description: description.trim(),
+        host_path: hostPath.trim(),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
       onClose();
@@ -174,6 +179,17 @@ function ProjectEditModal({ project, onClose }: { project: Project; onClose: () 
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="이 프로젝트의 작업 내용과 git 주소"
+        />
+
+        <label className="mt-3 block text-xs font-medium text-dim" htmlFor="pj-hostpath">
+          Host 경로 (deploy)
+        </label>
+        <input
+          id="pj-hostpath"
+          className="mt-1 w-full rounded border border-border3 bg-bg px-2 py-1.5 font-mono text-sm"
+          value={hostPath}
+          onChange={(e) => setHostPath(e.target.value)}
+          placeholder="/home/ubuntu/reins (비우면 deploy 비활성)"
         />
 
         <div className="mt-3 flex justify-end gap-2">

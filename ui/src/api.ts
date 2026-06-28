@@ -18,6 +18,7 @@ export interface Project {
   name: string;
   color: string | null;
   description: string | null;
+  host_path: string | null;
   created_at: string;
 }
 
@@ -63,6 +64,23 @@ export interface Decision {
   resolved_at: string | null;
 }
 
+export type DeployStatus = "pending" | "running" | "success" | "failed";
+
+export interface DeployJob {
+  id: number;
+  project_id: number;
+  project_name?: string; // list/get join
+  ref: string;
+  status: DeployStatus;
+  exit_code: number | null;
+  log_tail: string | null;
+  triggered_by: string;
+  host_path?: string | null; // claim 응답에만
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json", ...(init?.headers as Record<string, string>) };
   const token = getToken();
@@ -85,13 +103,15 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   projects: {
     list: () => req<Project[]>("/api/projects"),
-    create: (name: string, color?: string, description?: string) =>
+    create: (name: string, color?: string, description?: string, host_path?: string) =>
       req<Project>("/api/projects", {
         method: "POST",
-        body: JSON.stringify({ name, color, description }),
+        body: JSON.stringify({ name, color, description, host_path }),
       }),
-    update: (id: number, body: { name?: string; color?: string; description?: string }) =>
-      req<Project>(`/api/projects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    update: (
+      id: number,
+      body: { name?: string; color?: string; description?: string; host_path?: string },
+    ) => req<Project>(`/api/projects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     remove: (id: number) => req<void>(`/api/projects/${id}`, { method: "DELETE" }),
   },
   tickets: {
@@ -158,5 +178,17 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ resolution, note }),
       }),
+  },
+  deploy: {
+    trigger: (projectId: number, ref = "main") =>
+      req<DeployJob>(`/api/projects/${projectId}/deploy`, {
+        method: "POST",
+        body: JSON.stringify({ ref }),
+      }),
+    list: (projectId?: number) => {
+      const q = projectId != null ? `?project_id=${projectId}` : "";
+      return req<DeployJob[]>(`/api/deploy${q}`);
+    },
+    get: (id: number) => req<DeployJob>(`/api/deploy/${id}`),
   },
 };

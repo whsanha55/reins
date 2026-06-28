@@ -1,0 +1,28 @@
+# reins deploy host agent — systemd 유닛.
+# jjong(Oracle A1, user=ubuntu) 기준. 다른 환경이면 User/ExecStart 경로 수정.
+#
+# 설치:
+#   sudo install -d /etc/reins
+#   sudo tee /etc/reins/deploy-agent.env >/dev/null <<'EOF'
+#   REINS_API_URL=http://127.0.0.1:21001
+#   REINS_TOKEN=<reins API 토큰>
+#   POLL_INTERVAL=5
+#   EOF
+#   sudo cp reins-deploy-agent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now reins-deploy-agent
+#   journalctl -u reins-deploy-agent -f   # 로그 확인
+[Unit]
+Description=reins deploy host agent (board → git+deploy.sh)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+EnvironmentFile=/etc/reins/deploy-agent.env
+ExecStart=/home/ubuntu/reins/deploy/agent.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
