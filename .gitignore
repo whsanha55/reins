@@ -7,13 +7,15 @@
 secrets/
 secrets.*
 
-# === Go (server/) ===
-server/bin/
-server/server
-server/*.exe
-server/coverage.out
-server/coverage.html
-vendor/
+# === Python (server/) ===
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # === Node / Vite (ui/) ===
 ui/node_modules/
@@ -24,6 +26,7 @@ ui/npm-debug.log*
 ui/yarn-debug.log*
 
 # === DB / runtime ===
+.logs/
 *.db
 *.sqlite
 *.sqlite3
@@ -36,8 +39,9 @@ Thumbs.db
 # === IDE ===
 .idea/
 .vscode/
+*.iml
 *.swp
 *.swo
 
-# === docker ===
-docker-compose.override.yml
+# === misc ===
+.gstack/

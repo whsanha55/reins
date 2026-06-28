@@ -1,0 +1,34 @@
+[project]
+name = "reins-server"
+version = "0.1.0"
+description = "reins — 자율 칸반 커맨드센터 API (FastAPI). 서버는 상태/UI/알림 only, LLM/코드실행 禁 (D5)."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "asyncpg>=0.29.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+    "apscheduler>=3.10.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.5.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110  # 한국어 주석/로그문 마진
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]  # FastAPI Depends() in default args is idiomatic
