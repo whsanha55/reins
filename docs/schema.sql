@@ -160,6 +160,18 @@ CREATE TABLE IF NOT EXISTS deploy_jobs (
 CREATE INDEX IF NOT EXISTS idx_deploy_jobs_project ON deploy_jobs(project_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_deploy_jobs_pending  ON deploy_jobs(created_at) WHERE status='pending';
 
+-- ============================================================ sprints (#14 — done/cancel 노출 필터 경계)
+-- 프로젝트별 스프린트. 최신 started_at = 활성 스프린트. 보드는 활성 스프린트 시작(started_at) 이전에
+-- 닫힌(done/cancel, updated_at < started_at) 티켓을 기본 숨김. 티켓별 배정 없이 시간 경계로 필터.
+CREATE TABLE IF NOT EXISTS sprints (
+    id          BIGSERIAL PRIMARY KEY,
+    project_id  BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    started_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_sprints_project ON sprints(project_id, started_at DESC);
+
 -- ============================================================ init data
 -- 워크플로우 기본 액션(v1 하드코딩과 동일). Phase2 drop-in 확장점.
 INSERT INTO workflow_actions (trigger_from, trigger_to, action_type) VALUES

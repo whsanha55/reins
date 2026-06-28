@@ -24,6 +24,10 @@ class ProjectPatch(BaseModel):
     host_path: str | None = None
 
 
+class SprintIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
 @router.get("")
 async def list_projects(db=Depends(get_db)):
     rows = await db.fetch("SELECT * FROM projects ORDER BY created_at ASC")
@@ -80,3 +84,22 @@ async def update_project(pid: int, body: ProjectPatch, db=Depends(get_db)):
 async def delete_project(pid: int, db=Depends(get_db)):
     await db.execute("DELETE FROM projects WHERE id=$1", pid)
     return None
+
+
+# ── sprints (#14): 프로젝트별 스프린트. 최신 started_at = 활성. 보드가 done/cancel 노출 필터에 사용.
+@router.get("/{pid}/sprints")
+async def list_sprints(pid: int, db=Depends(get_db)):
+    rows = await db.fetch(
+        "SELECT * FROM sprints WHERE project_id=$1 ORDER BY started_at DESC, id DESC", pid
+    )
+    return [dict(r) for r in rows]
+
+
+@router.post("/{pid}/sprints", status_code=status.HTTP_201_CREATED)
+async def create_sprint(pid: int, body: SprintIn, db=Depends(get_db)):
+    if not await db.fetchrow("SELECT id FROM projects WHERE id=$1", pid):
+        raise HTTPException(404, "project not found")
+    row = await db.fetchrow(
+        "INSERT INTO sprints (project_id, name) VALUES ($1, $2) RETURNING *", pid, body.name
+    )
+    return dict(row)

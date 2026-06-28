@@ -51,6 +51,21 @@ export function Board({
     move.mutate({ id, to });
   };
 
+  // 스프린트(#14): 최신 = 활성. 시작 시점 기준으로 이전에 닫힌 done/cancel 을 기본 숨김.
+  const { data: sprints } = useQuery({
+    queryKey: ["sprints", projectId],
+    queryFn: () => api.sprints.list(projectId),
+  });
+  const [showClosed, setShowClosed] = useState(false);
+  const newSprint = useMutation({
+    mutationFn: () => api.sprints.create(projectId, `스프린트 ${(sprints?.length ?? 0) + 1}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sprints", projectId] });
+      toast.show("새 스프린트 시작 — 이전 완료/취소 숨김");
+    },
+    onError: (e) => toast.show(String((e as Error).message)),
+  });
+
   if (isLoading) return <Spinner label="보드 로드 중" />;
   if (error) return <ErrorState message={String((error as Error).message)} onRetry={() => refetch()} />;
   if (!tickets || tickets.length === 0)
@@ -66,12 +81,42 @@ export function Board({
       />
     );
 
+  const currentSprint = sprints?.[0] ?? null;
+  const sprintStart = currentSprint ? new Date(currentSprint.started_at).getTime() : null;
+  // 활성 스프린트 시작 이전에 닫힌(done/cancel) 티켓은 숨김. showClosed 또는 스프린트 없으면 전부 노출.
+  const visible = tickets.filter((t) => {
+    if (showClosed || sprintStart == null) return true;
+    if (t.status !== "done" && t.status !== "cancel") return true;
+    return new Date(t.updated_at).getTime() >= sprintStart;
+  });
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-border2 bg-surface px-4 py-2">
         <span className="font-mono text-xs text-dim">project</span>
         <span className="text-sm font-semibold">{projectName}</span>
+        <span className="ml-2 flex items-center gap-1.5 text-xs">
+          <span className="rounded bg-surface2 px-1.5 py-0.5 text-dim">
+            {currentSprint ? currentSprint.name : "스프린트 없음"}
+          </span>
+          <button
+            onClick={() => newSprint.mutate()}
+            disabled={newSprint.isPending}
+            className="rounded border border-border3 px-1.5 py-0.5 text-dim hover:bg-surface2 disabled:opacity-50"
+            title="새 스프린트를 시작하면 이전에 완료/취소된 티켓이 보드에서 숨겨집니다"
+          >
+            + 새 스프린트
+          </button>
+        </span>
         <div className="ml-auto flex items-center gap-2 text-xs">
+          <label className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={showClosed}
+              onChange={(e) => setShowClosed(e.target.checked)}
+            />
+            <span className="text-dim">지난 완료/취소</span>
+          </label>
           <label className="flex items-center gap-1">
             <span className="text-dim">그룹</span>
             <select
@@ -100,9 +145,9 @@ export function Board({
 
       <div className="flex-1 overflow-auto p-3">
         {group === "epic" ? (
-          <EpicGrouped tickets={tickets} onOpenTicket={onOpenTicket} onMove={onMove} />
+          <EpicGrouped tickets={visible} onOpenTicket={onOpenTicket} onMove={onMove} />
         ) : (
-          <Kanban tickets={tickets} onOpenTicket={onOpenTicket} onMove={onMove} />
+          <Kanban tickets={visible} onOpenTicket={onOpenTicket} onMove={onMove} />
         )}
       </div>
     </div>
