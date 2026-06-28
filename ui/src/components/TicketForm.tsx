@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type TicketType } from "../api";
-import { ErrorState, Spinner, type ToastApi } from "./ui";
+import { ErrorState, Spinner, isCmdEnter, type ToastApi } from "./ui";
 
 export function TicketForm({
   projectId,
@@ -60,6 +60,12 @@ export function TicketForm({
       onSubmit={(ev) => {
         ev.preventDefault();
         if (validate()) create.mutate();
+      }}
+      onKeyDown={(ev) => {
+        if (isCmdEnter(ev)) {
+          ev.preventDefault();
+          if (validate()) create.mutate();
+        }
       }}
     >
       <h2 className="text-base font-semibold">새 티켓</h2>

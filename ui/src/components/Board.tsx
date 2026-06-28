@@ -7,6 +7,10 @@ import { EmptyState, ErrorState, Spinner, type ToastApi } from "./ui";
 
 const COLUMNS: TicketStatus[] = ["todo", "progressing", "qa", "done", "cancel"];
 
+// 에픽별 구분 색 — 보드 섹션 전체 테두리에 사용. 에픽 순서 index로 안정 매핑.
+const EPIC_PALETTE = ["#4F46E5", "#0891B2", "#DB2777", "#16A34A", "#D97706", "#7C3AED", "#DC2626", "#0D9488"];
+const epicColor = (idx: number) => EPIC_PALETTE[idx % EPIC_PALETTE.length];
+
 export function Board({
   projectId,
   projectName,
@@ -105,33 +109,46 @@ export function Board({
   );
 }
 
-// 컬럼 드롭존 래퍼. onDragOver 기본방지 + 드롭 시 onMove(id, col).
+// 컬럼 드롭존 래퍼. flex-1 로 화면 채우되 min-w 로 좁아지면 가로 스크롤.
+// 드래그 오버 시 점선 테두리 + "여기에 놓기 → {status}" 가이드 표시.
 function Column({
   status,
   tickets,
   onOpenTicket,
   onMove,
-  width = "w-64",
 }: {
   status: TicketStatus;
   tickets: Ticket[];
   onOpenTicket: (id: number) => void;
   onMove: (id: number, to: TicketStatus) => void;
-  width?: string;
 }) {
   const items = tickets.filter((t) => t.status === status);
+  const [over, setOver] = useState(false);
   return (
-    <div className={`${width} shrink-0`}>
+    <div className="flex min-w-[180px] flex-1 flex-col">
       <ColumnHeader status={status} count={items.length} />
       <div
-        className="mt-2 flex min-h-16 flex-col gap-2"
+        className={`mt-2 flex min-h-16 flex-1 flex-col gap-2 rounded-md border-2 border-dashed p-1 transition-colors ${
+          over ? "border-info bg-info/5" : "border-transparent"
+        }`}
         onDragOver={(e) => e.preventDefault()}
+        onDragEnter={() => setOver(true)}
+        onDragLeave={(e) => {
+          // 자식 요소로의 이동은 leave 아님 — 컨테이너 밖으로 나갈 때만 해제.
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false);
+        }}
         onDrop={(e) => {
           e.preventDefault();
+          setOver(false);
           const id = Number(e.dataTransfer.getData("text/plain"));
           if (id) onMove(id, status);
         }}
       >
+        {over && (
+          <div className="pointer-events-none rounded border border-dashed border-info bg-surface px-2 py-1 text-center text-[11px] font-medium text-info">
+            여기에 놓기 → {status}
+          </div>
+        )}
         {items.map((t) => (
           <Card key={t.id} ticket={t} onOpen={onOpenTicket} />
         ))}
@@ -174,11 +191,12 @@ function EpicGrouped({
 
   return (
     <div className="flex flex-col gap-6">
-      {epics.map((epic) => {
+      {epics.map((epic, i) => {
         const children = tickets.filter((t) => t.parent_id === epic.id);
+        const color = epicColor(i);
         return (
-          <section key={epic.id}>
-            <EpicHeader epic={epic} children_={children} onOpen={onOpenTicket} />
+          <section key={epic.id} className="rounded-lg border-2 p-2" style={{ borderColor: color }}>
+            <EpicHeader epic={epic} children_={children} onOpen={onOpenTicket} color={color} />
             <div className="mt-2 flex gap-3">
               {COLUMNS.map((col) => (
                 <Column
@@ -187,7 +205,6 @@ function EpicGrouped({
                   tickets={children}
                   onOpenTicket={onOpenTicket}
                   onMove={onMove}
-                  width="w-56"
                 />
               ))}
             </div>
@@ -205,7 +222,6 @@ function EpicGrouped({
                 tickets={orphans}
                 onOpenTicket={onOpenTicket}
                 onMove={onMove}
-                width="w-56"
               />
             ))}
           </div>
@@ -228,10 +244,12 @@ function EpicHeader({
   epic,
   children_,
   onOpen,
+  color,
 }: {
   epic: Ticket;
   children_: Ticket[];
   onOpen: (id: number) => void;
+  color: string;
 }) {
   const done = children_.filter((c) => c.status === "done").length;
   const total = children_.length;
@@ -239,17 +257,23 @@ function EpicHeader({
   return (
     <button
       onClick={() => onOpen(epic.id)}
-      className="w-full rounded-md border-2 border-epic bg-surface px-3 py-2 text-left"
+      className="w-full rounded-md border-2 bg-surface px-3 py-2 text-left"
+      style={{ borderColor: color }}
     >
       <div className="flex items-center gap-2">
-        <span className="rounded bg-epic px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">EPIC</span>
+        <span
+          className="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-white"
+          style={{ backgroundColor: color }}
+        >
+          EPIC
+        </span>
         <span className="truncate text-sm font-semibold">{epic.title}</span>
         <span className="ml-auto font-mono text-xs text-dim">
           {done}/{total}
         </span>
       </div>
       <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface2">
-        <div className="h-full bg-epic" style={{ width: `${pct}%` }} />
+        <div className="h-full" style={{ width: `${pct}%`, backgroundColor: color }} />
       </div>
     </button>
   );
