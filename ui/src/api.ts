@@ -35,6 +35,14 @@ export interface Ticket {
   updated_at: string;
 }
 
+export interface Sprint {
+  id: number;
+  project_id: number;
+  name: string;
+  started_at: string;
+  created_at: string;
+}
+
 export interface TicketEvent {
   id: number;
   ticket_id: number;
@@ -157,6 +165,14 @@ export const api = {
       if (cursor) q.set("cursor", String(cursor));
       return req<{ items: TicketEvent[]; next_cursor: number | null }>(`/api/tickets/${id}/events?${q}`);
     },
+  },
+  sprints: {
+    list: (projectId: number) => req<Sprint[]>(`/api/projects/${projectId}/sprints`),
+    create: (projectId: number, name: string) =>
+      req<Sprint>(`/api/projects/${projectId}/sprints`, {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
   },
   comments: {
     list: (ticketId: number) => req<Comment[]>(`/api/tickets/${ticketId}/comments`),
