@@ -1,0 +1,41 @@
+# reins 운영 배포 — jjong 서버 패턴 (docker compose + 공유 infra 망 + Caddy 리버스프록시).
+# build context = 레포 루트. server/Dockerfile(context=루트) + ui/Dockerfile(context=./ui).
+services:
+  migrate:                       # schema.sql 멱등 적용 (oneshot). CREATE TABLE IF NOT EXISTS라 재실행 안전.
+    build: .
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+    command: ["uv", "run", "python", "migrate.py"]
+    restart: "no"
+    networks: [infra]
+
+  api:
+    build: .
+    init: true
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      PORT: "21001"
+      TZ: Asia/Seoul
+    ports:
+      - "127.0.0.1:21001:21001"   # 외부 미공개. Caddy(ui) 경유로만 접근.
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [infra]
+
+  ui:
+    build: ./ui
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:21002:80"      # nginx 정적 서빙 + /api,/health → api:21001 내부 프록시.
+    depends_on: [api]
+    networks: [infra]
+
+networks:
+  infra:
+    external: true               # 기존 infra-postgres-1 컨테이너가 사용 중인 공유 망 재사용.
