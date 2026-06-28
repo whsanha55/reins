@@ -1,0 +1,43 @@
+# === secrets / env (절대 커밋 금지 — API token, Telegram bot token, DB creds) ===
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+secrets.*
+
+# === Go (server/) ===
+server/bin/
+server/server
+server/*.exe
+server/coverage.out
+server/coverage.html
+vendor/
+
+# === Node / Vite (ui/) ===
+ui/node_modules/
+ui/dist/
+ui/.vite/
+ui/*.tsbuildinfo
+ui/npm-debug.log*
+ui/yarn-debug.log*
+
+# === DB / runtime ===
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === IDE ===
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# === docker ===
+docker-compose.override.yml
