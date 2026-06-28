@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from app.config import settings
 from app.core.notify.notifier import NotifyMessage
 from app.core.notify.topic_parser import render_card
 from app.ticket.state import can_transition
@@ -134,7 +135,7 @@ async def transition_ticket(
     note: str | None = None,
 ) -> dict:
     row = await db.fetchrow(
-        "SELECT id, status, title FROM tickets WHERE id=$1", ticket_id
+        "SELECT id, status, title, project_id FROM tickets WHERE id=$1", ticket_id
     )
     if not row:
         raise TicketError(f"ticket {ticket_id} not found")
@@ -150,7 +151,9 @@ async def transition_ticket(
     # #18: done 전이만 알림. progressing/qa/cancel 전이는 알림 생략.
     if to == "done":
         body = f"{frm} → {to}" + (f"\n{note}" if note else "")
-        msg = NotifyMessage(render_card(title=row["title"], body=body, category="info"))
+        # #27: 알림에 티켓 딥링크 포함.
+        url = f"{settings.PUBLIC_BASE_URL}/project/{row['project_id']}/t/{ticket_id}"
+        msg = NotifyMessage(render_card(title=row["title"], body=body, category="info", url=url))
         await dispatcher.notify(
             category="info",
             payload_key=f"transition:{ticket_id}:{frm}:{to}",
