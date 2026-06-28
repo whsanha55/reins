@@ -57,6 +57,8 @@ export function Board({
     queryFn: () => api.sprints.list(projectId),
   });
   const [showClosed, setShowClosed] = useState(false);
+  // #25: 새 스프린트 시작 전 인라인 컨펌(이전 완료/취소가 숨겨지므로).
+  const [confirmSprint, setConfirmSprint] = useState(false);
   const newSprint = useMutation({
     mutationFn: () => api.sprints.create(projectId, `스프린트 ${(sprints?.length ?? 0) + 1}`),
     onSuccess: () => {
@@ -99,14 +101,35 @@ export function Board({
           <span className="rounded bg-surface2 px-1.5 py-0.5 text-dim">
             {currentSprint ? currentSprint.name : "스프린트 없음"}
           </span>
-          <button
-            onClick={() => newSprint.mutate()}
-            disabled={newSprint.isPending}
-            className="rounded border border-border3 px-1.5 py-0.5 text-dim hover:bg-surface2 disabled:opacity-50"
-            title="새 스프린트를 시작하면 이전에 완료/취소된 티켓이 보드에서 숨겨집니다"
-          >
-            + 새 스프린트
-          </button>
+          {confirmSprint ? (
+            <span className="flex items-center gap-1">
+              <span className="text-dim">이전 완료/취소 숨김 — 시작?</span>
+              <button
+                onClick={() => {
+                  newSprint.mutate();
+                  setConfirmSprint(false);
+                }}
+                disabled={newSprint.isPending}
+                className="rounded bg-cta px-1.5 py-0.5 font-medium text-white disabled:opacity-50"
+              >
+                시작
+              </button>
+              <button
+                onClick={() => setConfirmSprint(false)}
+                className="rounded border border-border3 px-1.5 py-0.5 text-dim hover:bg-surface2"
+              >
+                취소
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={() => setConfirmSprint(true)}
+              className="rounded border border-border3 px-1.5 py-0.5 text-dim hover:bg-surface2"
+              title="새 스프린트를 시작하면 이전에 완료/취소된 티켓이 보드에서 숨겨집니다"
+            >
+              + 새 스프린트
+            </button>
+          )}
         </span>
         <div className="ml-auto flex items-center gap-2 text-xs">
           <label className="flex items-center gap-1">
