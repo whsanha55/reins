@@ -13,11 +13,13 @@ router = APIRouter(prefix="/api/projects", tags=["projects"], dependencies=[Depe
 class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     color: str | None = None
+    description: str | None = None
 
 
 class ProjectPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     color: str | None = None
+    description: str | None = None
 
 
 @router.get("")
@@ -29,9 +31,10 @@ async def list_projects(db=Depends(get_db)):
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_project(body: ProjectIn, db=Depends(get_db)):
     row = await db.fetchrow(
-        "INSERT INTO projects (name, color) VALUES ($1, $2) RETURNING *",
+        "INSERT INTO projects (name, color, description) VALUES ($1, $2, $3) RETURNING *",
         body.name,
         body.color,
+        body.description,
     )
     return dict(row)
 
@@ -53,6 +56,9 @@ async def update_project(pid: int, body: ProjectPatch, db=Depends(get_db)):
     if body.color is not None:
         args.append(body.color)
         sets.append(f"color=${len(args)}")
+    if body.description is not None:
+        args.append(body.description)
+        sets.append(f"description=${len(args)}")
     if not sets:
         return await get_project(pid, db)
     args.append(pid)

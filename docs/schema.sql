@@ -7,8 +7,11 @@ CREATE TABLE IF NOT EXISTS projects (
     id          BIGSERIAL PRIMARY KEY,
     name        TEXT NOT NULL,
     color       TEXT,
+    description TEXT,                           -- 작업 설명 + git 주소(자유 텍스트)
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- 기존 DB 마이그레이션(신규 DB는 위 CREATE TABLE 에 포함되어 no-op).
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT;
 
 -- ============================================================ tickets
 -- parent_id self-ref = 에픽(D-DR2). status 풀 단어(D-DR8). updated_at 정렬용(D-DR8).

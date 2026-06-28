@@ -17,6 +17,7 @@ export interface Project {
   id: number;
   name: string;
   color: string | null;
+  description: string | null;
   created_at: string;
 }
 
@@ -84,8 +85,13 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   projects: {
     list: () => req<Project[]>("/api/projects"),
-    create: (name: string, color?: string) =>
-      req<Project>("/api/projects", { method: "POST", body: JSON.stringify({ name, color }) }),
+    create: (name: string, color?: string, description?: string) =>
+      req<Project>("/api/projects", {
+        method: "POST",
+        body: JSON.stringify({ name, color, description }),
+      }),
+    update: (id: number, body: { name?: string; color?: string; description?: string }) =>
+      req<Project>(`/api/projects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     remove: (id: number) => req<void>(`/api/projects/${id}`, { method: "DELETE" }),
   },
   tickets: {

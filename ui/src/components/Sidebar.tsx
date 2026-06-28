@@ -1,7 +1,7 @@
 // Sidebar — 프로젝트 목록 + 추가(단일 프로젝트 스코프 전환, D-DR8).
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderPlus, Trash2 } from "lucide-react";
+import { FolderPlus, Pencil, Trash2 } from "lucide-react";
 import { api, type Project } from "../api";
 
 const COLORS = ["#10b981", "#0ea5e9", "#6366f1", "#8b5cf6", "#f59e0b", "#f43f5e", "#06b6d4"];
@@ -19,6 +19,7 @@ export function Sidebar({
     queryFn: api.projects.list,
   });
   const [name, setName] = useState("");
+  const [editing, setEditing] = useState<Project | null>(null);
 
   const create = useMutation({
     mutationFn: (n: string) => api.projects.create(n, COLORS[(projects?.length ?? 0) % COLORS.length]),
@@ -68,7 +69,16 @@ export function Sidebar({
                   style={{ background: p.color ?? "#94a3b8" }}
                   aria-hidden
                 />
-                <span className="truncate">{p.name}</span>
+                <span className="truncate" title={p.description ?? p.name}>
+                  {p.name}
+                </span>
+              </button>
+              <button
+                className="text-dim opacity-0 transition group-hover:opacity-100"
+                onClick={() => setEditing(p)}
+                aria-label={`${p.name} 편집`}
+              >
+                <Pencil className="h-3.5 w-3.5" />
               </button>
               <button
                 className="text-dim opacity-0 transition group-hover:opacity-100"
@@ -109,6 +119,85 @@ export function Sidebar({
           재시도
         </button>
       )}
+      {editing && <ProjectEditModal project={editing} onClose={() => setEditing(null)} />}
     </aside>
+  );
+}
+
+// 프로젝트 편집 모달 — 이름 + 설명/Git 주소(자유 텍스트). 저장 시 projects 쿼리 갱신.
+function ProjectEditModal({ project, onClose }: { project: Project; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [name, setName] = useState(project.name);
+  const [description, setDescription] = useState(project.description ?? "");
+
+  const update = useMutation({
+    mutationFn: () =>
+      api.projects.update(project.id, { name: name.trim(), description: description.trim() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      onClose();
+    },
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={onClose}
+    >
+      <form
+        className="w-[28rem] max-w-[90vw] rounded-lg border border-border2 bg-surface p-4 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim()) update.mutate();
+        }}
+      >
+        <h2 className="mb-3 text-sm font-semibold">프로젝트 편집</h2>
+
+        <label className="block text-xs font-medium text-dim" htmlFor="pj-name">
+          이름
+        </label>
+        <input
+          id="pj-name"
+          className="mt-1 w-full rounded border border-border3 bg-bg px-2 py-1.5 text-sm"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+
+        <label className="mt-3 block text-xs font-medium text-dim" htmlFor="pj-desc">
+          설명 / Git 주소
+        </label>
+        <textarea
+          id="pj-desc"
+          className="mt-1 w-full rounded border border-border3 bg-bg px-2 py-1.5 text-sm"
+          rows={5}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="이 프로젝트의 작업 내용과 git 주소"
+        />
+
+        <div className="mt-3 flex justify-end gap-2">
+          <button
+            type="button"
+            className="rounded border border-border3 px-3 py-1.5 text-sm"
+            onClick={onClose}
+          >
+            취소
+          </button>
+          <button
+            type="submit"
+            className="rounded bg-cta px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            disabled={!name.trim() || update.isPending}
+          >
+            {update.isPending ? "저장 중…" : "저장"}
+          </button>
+        </div>
+        {update.isError && (
+          <p className="mt-2 text-xs text-danger" aria-live="assertive">
+            수정 실패: {String((update.error as Error).message)}
+          </p>
+        )}
+      </form>
+    </div>
   );
 }
