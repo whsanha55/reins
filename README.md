@@ -84,7 +84,7 @@ git clone <repo-url> reins && cd reins
 
 ```bash
 cp .env.example server/.env.local   # 값 채우기. config.py는 server/ 기준으로 .env.local/.env 로드
-./dev.sh
+./local_run.sh
 # backend → http://localhost:21001
 # ui      → http://localhost:21002
 # 로그     → .logs/{backend,frontend}.log

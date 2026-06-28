@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# reins 로컬 dev 실행기. backend(21001) + ui(21002).
+# reins 로컬 local 실행기. backend(21001) + ui(21002).
 # 이미 켜진 포트면 kill 후 재시작. Ctrl+C 로 둘 다 종료.
 set -uo pipefail
 
