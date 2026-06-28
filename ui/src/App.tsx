@@ -6,13 +6,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Sidebar } from "./components/Sidebar";
 import { Board } from "./components/Board";
 import { DecisionQueue } from "./components/DecisionQueue";
+import { DeployView } from "./components/DeployView";
 import { TicketForm } from "./components/TicketForm";
 import { TicketDrawer } from "./components/TicketDrawer";
 import { useToast } from "./components/ui";
 import { api, getToken, setToken } from "./api";
 import { useRoute, type Route } from "./router";
 
-type Tab = "board" | "decisions" | "new";
+type Tab = "board" | "decisions" | "new" | "deploy";
 
 export default function App() {
   // ponytail: 게이트/본체 분리 — React hooks 순서 위반 방지(gate 시 미호출 hook 방지).
@@ -53,7 +54,13 @@ function Main() {
   }, [route, projects, navigate]);
 
   const tab: Tab =
-    route.view === "decisions" ? "decisions" : route.view === "new" ? "new" : "board";
+    route.view === "decisions"
+      ? "decisions"
+      : route.view === "deploy"
+        ? "deploy"
+        : route.view === "new"
+          ? "new"
+          : "board";
   const openTicketId = route.view === "ticket" ? route.tid : null;
 
   const goProject = (id: number | null) => navigate(id == null ? "/" : `/project/${id}`);
@@ -81,6 +88,9 @@ function Main() {
               )}
             </span>
           </TabBtn>
+          <TabBtn active={tab === "deploy"} onClick={() => navigate("/deploy")}>
+            Deploy
+          </TabBtn>
           <TabBtn
             active={tab === "new"}
             onClick={() => navigate(lastPid ? `/project/${lastPid}/new` : "/")}
@@ -105,6 +115,7 @@ function Main() {
             </div>
           )}
           {tab === "decisions" && <DecisionQueue toast={toast} />}
+          {tab === "deploy" && <DeployView toast={toast} />}
           {tab === "new" && project && (
             <TicketForm projectId={project.id} toast={toast} onDone={() => navigate(`/project/${project.id}`)} />
           )}

@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 -- 기존 DB 마이그레이션(신규 DB는 위 CREATE TABLE 에 포함되어 no-op).
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS description TEXT;
+-- deploy-as-code: agent 가 git 동기화+deploy.sh 실행할 호스트 경로. null=deploy 불가.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS host_path TEXT;
 
 -- ============================================================ tickets
 -- parent_id self-ref = 에픽(D-DR2). status 풀 단어(D-DR8). updated_at 정렬용(D-DR8).
@@ -138,6 +140,25 @@ CREATE TABLE IF NOT EXISTS audit_log (
     payload     JSONB,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ============================================================ deploy_jobs (보드에서 배포 — controller/agent 큐)
+-- reins API 가 row 생성(트리거). jjong host agent 가 claim → 실행 → result 기록.
+-- agent=공통 git 동기화, 각 repo deploy.sh=빌드(model 2 deploy-as-code).
+CREATE TABLE IF NOT EXISTS deploy_jobs (
+    id           BIGSERIAL PRIMARY KEY,
+    project_id   BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    ref          TEXT NOT NULL DEFAULT 'main',           -- 배포 대상 branch
+    status       TEXT NOT NULL DEFAULT 'pending',        -- pending|running|success|failed
+    exit_code    INTEGER,
+    log_tail     TEXT,                                   -- stdout/stderr 마지막 N줄
+    triggered_by TEXT NOT NULL DEFAULT 'manual',         -- manual|<agent id>
+    started_at   TIMESTAMPTZ,
+    finished_at  TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT deploy_status_chk CHECK (status IN ('pending','running','success','failed'))
+);
+CREATE INDEX IF NOT EXISTS idx_deploy_jobs_project ON deploy_jobs(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_deploy_jobs_pending  ON deploy_jobs(created_at) WHERE status='pending';
 
 -- ============================================================ init data
 -- 워크플로우 기본 액션(v1 하드코딩과 동일). Phase2 drop-in 확장점.

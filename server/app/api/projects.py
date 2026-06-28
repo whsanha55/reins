@@ -14,12 +14,14 @@ class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     color: str | None = None
     description: str | None = None
+    host_path: str | None = None              # deploy-as-code: agent 실행 호스트 경로. null=deploy 불가
 
 
 class ProjectPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     color: str | None = None
     description: str | None = None
+    host_path: str | None = None
 
 
 @router.get("")
@@ -31,10 +33,11 @@ async def list_projects(db=Depends(get_db)):
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_project(body: ProjectIn, db=Depends(get_db)):
     row = await db.fetchrow(
-        "INSERT INTO projects (name, color, description) VALUES ($1, $2, $3) RETURNING *",
+        "INSERT INTO projects (name, color, description, host_path) VALUES ($1, $2, $3, $4) RETURNING *",
         body.name,
         body.color,
         body.description,
+        body.host_path,
     )
     return dict(row)
 
@@ -59,6 +62,9 @@ async def update_project(pid: int, body: ProjectPatch, db=Depends(get_db)):
     if body.description is not None:
         args.append(body.description)
         sets.append(f"description=${len(args)}")
+    if body.host_path is not None:
+        args.append(body.host_path or None)         # 빈 문자열 → null 정규화(초기화 지원)
+        sets.append(f"host_path=${len(args)}")
     if not sets:
         return await get_project(pid, db)
     args.append(pid)
