@@ -5,7 +5,11 @@
 #       → git 동기화(fetch/reset) + bash deploy.sh → POST /deploy/{id}/result.
 # 책임 분리(model 2 deploy-as-code): 본 agent=공통 git 동기화. 각 repo deploy.sh=빌드(docker compose up 등).
 # 자기 배포(reins→reins) 안전: 본 프로세스는 호스트. api 컨테이너 재기동 중에도 계속 실행,
-#   result POST 는 --retry-connrefused 로 api 복귀 후 재전송.
+#   result POST 는 성공할 때까지 재시도 루프.
+#
+# 주의 — repo 밖 안정 경로에서 실행할 것: 본 스크립트가 배포 대상 repo(~/reins) 안에 있으면,
+#   git reset --hard 가 같은 inode 를 truncate+재기록해서 실행 중인 루프를 오염시킨다.
+#   따라서 systemd ExecStart=/etc/reins/agent.sh (복사본) 로 구동. agent.sh 갱신 시 재복사+재시작.
 #
 # 설정(env 또는 EnvironmentFile):
 #   REINS_API_URL   필수 — reins api 베이스(예: http://127.0.0.1:21001)
@@ -52,11 +56,19 @@ while true; do
   [[ $code -eq 0 ]] && status=success || status=failed
   echo "[agent] job #${id} → ${status} (exit ${code})"
 
-  # 3) 결과 회신. api 재기동 중일 수 있음 → --retry-connrefused 로 복귀 후 전송.
+  # 3) 결과 회신. api 재기동 중일 수 있음(자기 배포 실패 등) → 성공까지 재시도.
+  #    job 은 반드시 결과를 받아야 함(미회신 시 영구 running → reclaim-stale 10분 대기).
   payload=$(jq -nc --arg s "$status" --argjson c "$code" --arg l "$tail_log" \
     '{status:$s, exit_code:$c, log_tail:$l}')
-  curl -sf --retry 10 --retry-delay 2 --retry-connrefused \
-    -X POST "$REINS_API_URL/api/deploy/${id}/result" "${AUTH[@]}" \
-    -H "Content-Type: application/json" -d "$payload" >/dev/null 2>&1 \
-    || echo "[agent] WARN: result post failed for job #${id} (api down?)"
+  posted=0
+  for _ in $(seq 1 60); do  # 최대 ~180s
+    if curl -sf --retry 3 --retry-connrefused \
+      -X POST "$REINS_API_URL/api/deploy/${id}/result" "${AUTH[@]}" \
+      -H "Content-Type: application/json" -d "$payload" >/dev/null 2>&1; then
+      posted=1
+      break
+    fi
+    sleep 3
+  done
+  [[ $posted -eq 0 ]] && echo "[agent] WARN: result post failed for job #${id} after retries (api down?)"
 done

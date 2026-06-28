@@ -3,6 +3,7 @@
 #
 # 설치:
 #   sudo install -d /etc/reins
+#   sudo cp agent.sh /etc/reins/agent.sh && sudo chmod +x /etc/reins/agent.sh   # repo 밖 안정 경로(자기 배포 중 변형 방지)
 #   sudo tee /etc/reins/deploy-agent.env >/dev/null <<'EOF'
 #   REINS_API_URL=http://127.0.0.1:21001
 #   REINS_TOKEN=<reins API 토큰>
@@ -11,6 +12,7 @@
 #   sudo cp reins-deploy-agent.service /etc/systemd/system/
 #   sudo systemctl daemon-reload && sudo systemctl enable --now reins-deploy-agent
 #   journalctl -u reins-deploy-agent -f   # 로그 확인
+# 갱신: agent.sh 바뀌면 /etc/reins/agent.sh 재복사 후 sudo systemctl restart reins-deploy-agent.
 [Unit]
 Description=reins deploy host agent (board → git+deploy.sh)
 After=network-online.target docker.service
@@ -20,7 +22,7 @@ Wants=network-online.target
 Type=simple
 User=ubuntu
 EnvironmentFile=/etc/reins/deploy-agent.env
-ExecStart=/home/ubuntu/reins/deploy/agent.sh
+ExecStart=/etc/reins/agent.sh
 Restart=always
 RestartSec=5
 

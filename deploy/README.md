@@ -34,11 +34,15 @@ controller/agent 분리: reins API(container)=큐, 본 agent(host)=실행.
    ```
 3. 유닛 설치/기동:
    ```bash
+   # agent.sh 는 repo 밖 안정 경로로 복사(자기 배포 중 git reset 가 repo 내 파일을 변형하지 않게).
+   sudo install -d /etc/reins
+   sudo cp ~/reins/deploy/agent.sh /etc/reins/agent.sh && sudo chmod +x /etc/reins/agent.sh
    sudo cp ~/reins/deploy/reins-deploy-agent.service /etc/systemd/system/
    sudo systemctl daemon-reload
    sudo systemctl enable --now reins-deploy-agent
    journalctl -u reins-deploy-agent -f
    ```
+   **agent.sh 갱신 시**: `/etc/reins/agent.sh` 재복사 후 `sudo systemctl restart reins-deploy-agent`.
 4. reins project 의 `host_path` 세팅(`/home/ubuntu/reins`) — UI 편집 또는
    `PATCH /api/projects/1 {"host_path":"/home/ubuntu/reins"}`.
 
