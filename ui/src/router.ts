@@ -6,6 +6,7 @@ export type Route =
   | { view: "home" }
   | { view: "board"; pid: number }
   | { view: "new"; pid: number }
+  | { view: "sprints"; pid: number }
   | { view: "decisions" }
   | { view: "deploy" }
   | { view: "ticket"; pid: number; tid: number };
@@ -19,6 +20,7 @@ export function parsePath(path: string): Route {
     const pid = Number(seg[1]);
     if (!Number.isFinite(pid)) return { view: "home" };
     if (seg[2] === "new") return { view: "new", pid };
+    if (seg[2] === "sprints") return { view: "sprints", pid };
     if (seg[2] === "t" && seg[3]) {
       const tid = Number(seg[3]);
       if (Number.isFinite(tid)) return { view: "ticket", pid, tid };
