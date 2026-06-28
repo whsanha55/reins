@@ -24,3 +24,31 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* 마크다운 렌더(.md) — @tailwindcss/typography 없이 최소 스타일. */
+.md {
+  @apply text-sm leading-relaxed break-words;
+}
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0.5em 0; }
+.md h1, .md h2, .md h3 { font-weight: 600; line-height: 1.3; margin: 0.8em 0 0.4em; }
+.md h1 { font-size: 1.25em; }
+.md h2 { font-size: 1.12em; }
+.md h3 { font-size: 1em; }
+.md ul, .md ol { margin: 0.5em 0; padding-left: 1.4em; }
+.md ul { list-style: disc; }
+.md ol { list-style: decimal; }
+.md li { margin: 0.15em 0; }
+.md a { @apply text-info underline; }
+.md strong { font-weight: 600; }
+.md em { font-style: italic; }
+.md code { @apply rounded bg-surface2 px-1 py-0.5 font-mono; font-size: 0.85em; }
+.md pre { @apply my-2 overflow-x-auto rounded bg-surface2 p-2; }
+.md pre code { @apply bg-transparent p-0; }
+.md blockquote { @apply my-2 border-l-2 border-border3 pl-3 text-muted; }
+.md hr { @apply my-3 border-border2; }
+.md table { @apply my-2 text-xs; border-collapse: collapse; }
+.md th, .md td { @apply border border-border2 px-2 py-1; }
+.md th { @apply bg-surface2 font-semibold; }
+.md input[type="checkbox"] { @apply mr-1 align-middle; }

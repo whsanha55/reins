@@ -105,3 +105,7 @@ export interface ToastApi {
   show: (m: string) => void;
   node: ReactNode;
 }
+
+// Cmd/Ctrl+Enter 저장 단축키 공용 판별.
+export const isCmdEnter = (e: { key: string; metaKey: boolean; ctrlKey: boolean }) =>
+  e.key === "Enter" && (e.metaKey || e.ctrlKey);

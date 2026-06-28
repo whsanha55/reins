@@ -1,20 +1,12 @@
-// TicketDrawer — 우측 드로어. Timeline(커서 페이지네이션) / Comments(agent-read ✓) 탭.
+// TicketDrawer — 우측 드로어. Comments(기본·agent-read ✓) / Timeline(커서 페이지네이션) 탭.
+// 상태 전이는 보드 드래그앤드롭으로 — 드로어엔 전이 버튼 없음.
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CheckCheck, MessageSquare, X } from "lucide-react";
-import { api, type TicketStatus } from "../api";
-import { ErrorState, Spinner, StatusBadge, type ToastApi } from "./ui";
-
-// 유효 전이 버튼(상태기계 매칭). cancel/reopen 별도.
-const NEXT: Partial<Record<TicketStatus, { to: TicketStatus; label: string }[]>> = {
-  todo: [{ to: "progressing", label: "진행 시작" }],
-  progressing: [{ to: "qa", label: "QA로" }],
-  qa: [
-    { to: "done", label: "완료" },
-    { to: "progressing", label: "반려/재진행" },
-  ],
-};
+import { Check, CheckCheck, Maximize2, MessageSquare, Minimize2, Pencil, X } from "lucide-react";
+import { api } from "../api";
+import { ErrorState, Spinner, StatusBadge, isCmdEnter, type ToastApi } from "./ui";
+import { Markdown } from "./Markdown";
 
 export function TicketDrawer({
   ticketId,
@@ -26,7 +18,8 @@ export function TicketDrawer({
   toast: ToastApi;
 }) {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"timeline" | "comments">("timeline");
+  const [tab, setTab] = useState<"timeline" | "comments">("comments");
+  const [wide, setWide] = useState(false);
 
   const { data: ticket, isLoading, error, refetch } = useQuery({
     queryKey: ["ticket", ticketId],
@@ -38,37 +31,38 @@ export function TicketDrawer({
     qc.invalidateQueries({ queryKey: ["tickets"] });
   };
 
-  const transition = useMutation({
-    mutationFn: (vars: { to: TicketStatus; cancel?: boolean; reopen?: boolean }) =>
-      vars.cancel
-        ? api.tickets.cancel(ticketId)
-        : vars.reopen
-          ? api.tickets.reopen(ticketId)
-          : api.tickets.transition(ticketId, vars.to),
-    onSuccess: (_d, vars) => {
-      invalidateAll();
-      toast.show(vars.cancel ? "취소됨" : vars.reopen ? "재개됨" : "상태 변경됨");
-    },
-  });
-
-  // 내용(description)은 항상 보이고 인라인 수정 저장(PATCH). 빈 티켓도 편집칸 표시.
+  // 내용(description) — 기본은 마크다운 렌더, "수정"으로 인라인 편집(PATCH). 빈 티켓은 바로 편집칸.
   const [desc, setDesc] = useState(ticket?.description ?? "");
+  const [editing, setEditing] = useState(false);
   const [focused, setFocused] = useState(false);
   useEffect(() => setDesc(ticket?.description ?? ""), [ticket?.description]);
   const saveDesc = useMutation({
     mutationFn: () => api.tickets.update(ticketId, { description: desc }),
     onSuccess: () => {
       invalidateAll();
+      setEditing(false);
       toast.show("내용 저장됨");
     },
   });
 
   return (
-    <div className="fixed inset-y-0 right-0 z-30 flex w-[420px] flex-col border-l border-border2 bg-surface shadow-xl">
+    <div
+      className={`fixed inset-y-0 right-0 z-30 flex flex-col border-l border-border2 bg-surface shadow-xl transition-[width] ${
+        wide ? "w-[min(960px,92vw)]" : "w-[420px]"
+      }`}
+    >
       <header className="flex items-center gap-2 border-b border-border2 px-4 py-3">
         {ticket && <StatusBadge status={ticket.status} />}
         <span className="font-mono text-xs text-dim">#{ticketId}</span>
-        <button className="ml-auto text-dim hover:text-ink" onClick={onClose} aria-label="닫기">
+        <button
+          className="ml-auto text-dim hover:text-ink"
+          onClick={() => setWide((w) => !w)}
+          aria-label={wide ? "좁게 보기" : "넓게 보기"}
+          title={wide ? "좁게" : "넓게"}
+        >
+          {wide ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+        </button>
+        <button className="text-dim hover:text-ink" onClick={onClose} aria-label="닫기">
           <X className="h-4 w-4" />
         </button>
       </header>
@@ -80,88 +74,80 @@ export function TicketDrawer({
           <div className="border-b border-border2 px-4 py-3">
             <h2 className="text-base font-semibold">{ticket.title}</h2>
             <div className="mt-3">
-              <div
-                className={`overflow-hidden rounded-lg border bg-surface2 transition-colors ${
-                  focused ? "border-info ring-2 ring-info/15" : "border-border2"
-                }`}
-              >
-                <div className="flex items-center justify-between border-b border-border2 bg-surface/60 px-3 py-1.5">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-dim">
-                    내용
-                  </span>
-                  <span className="font-mono text-[10px] text-dim">
-                    {desc.length}자
-                    {desc !== (ticket.description ?? "") ? " · 수정됨" : ""}
-                  </span>
+              {!editing && (ticket.description ?? "").trim() ? (
+                <div className="rounded-lg border border-border2 bg-surface2 px-3 py-2.5">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-dim">내용</span>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(true)}
+                      className="flex items-center gap-1 text-[11px] text-dim hover:text-ink"
+                    >
+                      <Pencil className="h-3 w-3" /> 수정
+                    </button>
+                  </div>
+                  <Markdown>{ticket.description ?? ""}</Markdown>
                 </div>
-                <textarea
-                  id="d-desc"
-                  className="block min-h-[140px] w-full resize-y bg-transparent px-3 py-2.5 text-sm leading-relaxed text-ink placeholder:text-dim/50 focus:outline-none"
-                  rows={7}
-                  value={desc}
-                  onChange={(e) => setDesc(e.target.value)}
-                  onFocus={() => setFocused(true)}
-                  onBlur={() => setFocused(false)}
-                  placeholder="이 티켓의 내용, 맥락, 완료 조건 등을 적어주세요…"
-                />
-                <div className="flex items-center justify-between gap-2 border-t border-border2 bg-surface/60 px-2.5 py-1.5">
-                  <span className="text-[10px] text-dim">
-                    {focused ? "자동 저장 안 됨 — 저장 버튼을 누르세요" : ""}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => saveDesc.mutate()}
-                    disabled={saveDesc.isPending || desc === (ticket.description ?? "")}
-                    className="rounded-md bg-cta px-3 py-1 text-xs font-medium text-white transition hover:bg-ink disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {saveDesc.isPending ? "저장 중…" : "저장"}
-                  </button>
+              ) : (
+                <div
+                  className={`overflow-hidden rounded-lg border bg-surface2 transition-colors ${
+                    focused ? "border-info ring-2 ring-info/15" : "border-border2"
+                  }`}
+                >
+                  <div className="flex items-center justify-between border-b border-border2 bg-surface/60 px-3 py-1.5">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-dim">
+                      내용
+                    </span>
+                    <span className="font-mono text-[10px] text-dim">
+                      {desc.length}자
+                      {desc !== (ticket.description ?? "") ? " · 수정됨" : ""}
+                    </span>
+                  </div>
+                  <textarea
+                    id="d-desc"
+                    className="block min-h-[140px] w-full resize-y bg-transparent px-3 py-2.5 text-sm leading-relaxed text-ink placeholder:text-dim/50 focus:outline-none"
+                    rows={7}
+                    value={desc}
+                    onChange={(e) => setDesc(e.target.value)}
+                    onFocus={() => setFocused(true)}
+                    onBlur={() => setFocused(false)}
+                    onKeyDown={(e) => {
+                      if (isCmdEnter(e) && desc !== (ticket.description ?? "")) {
+                        e.preventDefault();
+                        saveDesc.mutate();
+                      }
+                    }}
+                    placeholder="이 티켓의 내용, 맥락, 완료 조건 등을 적어주세요… (마크다운 지원, ⌘/Ctrl+Enter 저장)"
+                  />
+                  <div className="flex items-center justify-between gap-2 border-t border-border2 bg-surface/60 px-2.5 py-1.5">
+                    <span className="text-[10px] text-dim">
+                      {focused ? "⌘/Ctrl+Enter 로 저장" : ""}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => saveDesc.mutate()}
+                      disabled={saveDesc.isPending || desc === (ticket.description ?? "")}
+                      className="rounded-md bg-cta px-3 py-1 text-xs font-medium text-white transition hover:bg-ink disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {saveDesc.isPending ? "저장 중…" : "저장"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {(NEXT[ticket.status] ?? []).map((n) => (
-                <button
-                  key={n.to}
-                  onClick={() => transition.mutate({ to: n.to })}
-                  disabled={transition.isPending}
-                  className="rounded bg-cta px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50"
-                >
-                  {n.label}
-                </button>
-              ))}
-              {ticket.status !== "cancel" && ticket.status !== "done" && (
-                <button
-                  onClick={() => transition.mutate({ to: "cancel", cancel: true })}
-                  disabled={transition.isPending}
-                  className="rounded border border-danger px-2.5 py-1 text-xs text-danger disabled:opacity-50"
-                >
-                  취소
-                </button>
-              )}
-              {(ticket.status === "done" || ticket.status === "cancel") && (
-                <button
-                  onClick={() => transition.mutate({ to: "todo", reopen: true })}
-                  disabled={transition.isPending}
-                  className="rounded border border-border3 px-2.5 py-1 text-xs text-muted disabled:opacity-50"
-                >
-                  재개(reopen)
-                </button>
               )}
             </div>
           </div>
 
           <div className="flex border-b border-border2 px-4 text-sm">
-            <TabBtn active={tab === "timeline"} onClick={() => setTab("timeline")}>
-              Timeline
-            </TabBtn>
             <TabBtn active={tab === "comments"} onClick={() => setTab("comments")}>
               <MessageSquare className="mr-1 inline h-3.5 w-3.5" />
               Comments
             </TabBtn>
+            <TabBtn active={tab === "timeline"} onClick={() => setTab("timeline")}>
+              Timeline
+            </TabBtn>
           </div>
 
-          {tab === "timeline" ? <Timeline ticketId={ticketId} /> : <Comments ticketId={ticketId} toast={toast} />}
+          {tab === "comments" ? <Comments ticketId={ticketId} toast={toast} /> : <Timeline ticketId={ticketId} />}
         </div>
       )}
     </div>
@@ -282,7 +268,9 @@ function Comments({ ticketId, toast }: { ticketId: number; toast: ToastApi }) {
                 {new Date(c.created_at).toLocaleString()}
               </span>
             </div>
-            <p className="mt-1 whitespace-pre-wrap text-sm">{c.body}</p>
+            <div className="mt-1">
+              <Markdown>{c.body}</Markdown>
+            </div>
           </li>
         ))}
       </ul>
@@ -305,7 +293,13 @@ function Comments({ ticketId, toast }: { ticketId: number; toast: ToastApi }) {
           rows={2}
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="코멘트"
+          onKeyDown={(e) => {
+            if (isCmdEnter(e) && body.trim()) {
+              e.preventDefault();
+              create.mutate();
+            }
+          }}
+          placeholder="코멘트 (마크다운 지원, ⌘/Ctrl+Enter 작성)"
         />
         <button
           type="submit"
