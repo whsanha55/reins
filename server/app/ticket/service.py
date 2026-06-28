@@ -147,14 +147,16 @@ async def transition_ticket(
     await record_event(
         db, ticket_id, "transition", {"from": frm, "to": to, "actor": actor, "note": note}
     )
-    body = f"{frm} → {to}" + (f"\n{note}" if note else "")
-    msg = NotifyMessage(render_card(title=row["title"], body=body, category="info"))
-    await dispatcher.notify(
-        category="info",
-        payload_key=f"transition:{ticket_id}:{frm}:{to}",
-        message=msg,
-        ticket_id=ticket_id,
-    )
+    # #18: done 전이만 알림. progressing/qa/cancel 전이는 알림 생략.
+    if to == "done":
+        body = f"{frm} → {to}" + (f"\n{note}" if note else "")
+        msg = NotifyMessage(render_card(title=row["title"], body=body, category="info"))
+        await dispatcher.notify(
+            category="info",
+            payload_key=f"transition:{ticket_id}:{frm}:{to}",
+            message=msg,
+            ticket_id=ticket_id,
+        )
     return {"id": ticket_id, "from": frm, "to": to}
 
 
@@ -174,12 +176,7 @@ async def reopen_ticket(
         "UPDATE tickets SET status='todo', updated_at=now() WHERE id=$1", ticket_id
     )
     await record_event(db, ticket_id, "transition", {"from": frm, "to": "todo", "actor": "user"})
-    msg = NotifyMessage(
-        render_card(title=row["title"], body=f"{frm} → todo (reopen)", category="info")
-    )
-    await dispatcher.notify(
-        category="info", payload_key=f"reopen:{ticket_id}", message=msg, ticket_id=ticket_id
-    )
+    # #18: done 전이만 알림 — reopen(→todo)은 생략.
     return {"id": ticket_id, "from": frm, "to": "todo"}
 
 
