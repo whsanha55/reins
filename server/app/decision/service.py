@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.core.notify.notifier import NotifyMessage
-from app.core.notify.topic_parser import GATE_LABEL, classify, render_card
+from app.core.notify.topic_parser import GATE_LABEL, classify, render_card, resolve_keyboard
 from app.ticket.service import record_event
 
 if TYPE_CHECKING:
@@ -48,7 +48,11 @@ async def request_decision(
         )
     d = dict(row)
     title = f"티켓 #{ticket_id} — {GATE_LABEL.get(gate, gate)} 결정"
-    msg = NotifyMessage(render_card(title=title, body=summary, category=category))
+    # 인라인 키보드 부착 — 사람이 텔레그램에서 바로 resolve(webhook 경유).
+    msg = NotifyMessage(
+        render_card(title=title, body=summary, category=category),
+        reply_markup=resolve_keyboard(d["id"]),
+    )
     await dispatcher.notify(
         category=category,
         payload_key=f"decision:{d['id']}",

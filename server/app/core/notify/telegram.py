@@ -26,7 +26,8 @@ class TelegramNotifier(Notifier):
         self.create_topic_calls = 0
 
     async def send(self, chat_id: str, topic_id: int | None, message: NotifyMessage) -> None:
-        for chunk in _split(message.text, _MAX_TEXT):
+        chunks = _split(message.text, _MAX_TEXT)
+        for i, chunk in enumerate(chunks):
             payload: dict[str, object] = {
                 "chat_id": chat_id,
                 "text": chunk,
@@ -34,6 +35,9 @@ class TelegramNotifier(Notifier):
             }
             if topic_id is not None:
                 payload["message_thread_id"] = topic_id
+            # 인라인 키보드는 첫 chunk에만(카드는 보통 1메시지).
+            if i == 0 and message.reply_markup:
+                payload["reply_markup"] = message.reply_markup
             await self._post("sendMessage", payload)
 
     async def create_topic(self, chat_id: str, name: str) -> int:
