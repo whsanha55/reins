@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from app.core.notify.dispatcher import NotifyDispatcher
 
 LIFECYCLE = {"running", "succeeded", "failed", "stalled"}
+# ticket #32 영역4 — claim 실패 rollback: todo 복귀(재claim 허용). 누적 실패 한계 초과 시 cancel. stalled(heartbeat)은 watchdog.py 가 이미 todo 복귀.
+MAX_AGENT_FAILS = 3
 
 
 class AgentError(ValueError):
@@ -110,13 +112,29 @@ async def submit_result(
         )
         return {"run_id": run_id, "status": "succeeded", "to": "qa"}
 
-    # failed
+    # failed — rollback(ticket #32 영역4): todo 복귀로 재claim 허용. 누적 MAX_AGENT_FAILS회 → cancel(포기).
+    # stalled(heartbeat 정체)은 watchdog.py 가 이미 todo 복귀시킴. 본 경로는 result failed.
     await record_event(
         db, ticket_id, "agent_failed", {"run_id": run_id, "summary": validated["summary"]}
     )
+    fail_count = await db.fetchval(
+        "SELECT count(*) FROM agent_runs WHERE ticket_id=$1 AND status='failed'", ticket_id
+    )
+    if fail_count >= MAX_AGENT_FAILS:
+        await transition_ticket(
+            db, dispatcher, ticket_id=ticket_id, to="cancel", actor="agent",
+            note=f"agent 실패 {fail_count}회 — rollback 포기",
+        )
+        final = "cancel"
+    else:
+        await transition_ticket(
+            db, dispatcher, ticket_id=ticket_id, to="todo", actor="agent",
+            note=f"agent 실패({fail_count}/{MAX_AGENT_FAILS}) — todo 복귀(재claim 대기)",
+        )
+        final = "todo"
     msg = NotifyMessage(
         render_card(
-            title=f"티켓 #{ticket_id} 에이전트 실패",
+            title=f"티켓 #{ticket_id} 에이전트 실패 → {final}",
             body=validated["summary"],
             category="info",
         )
@@ -127,7 +145,7 @@ async def submit_result(
         message=msg,
         ticket_id=ticket_id,
     )
-    return {"run_id": run_id, "status": "failed"}
+    return {"run_id": run_id, "status": "failed", "ticket": final}
 
 
 async def _fail_run(
