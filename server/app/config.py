@@ -34,6 +34,9 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "http://localhost:21002,http://localhost:3000"
 
+    # 알림 내 티켓 딥링크 base (#27). 운영 보드 URL.
+    PUBLIC_BASE_URL: str = "https://reins.gonamu.com"
+
     model_config = SettingsConfigDict(
         env_file=(".env.local", ".env"), env_file_encoding="utf-8", extra="ignore"
     )

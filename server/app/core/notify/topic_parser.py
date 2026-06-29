@@ -41,11 +41,16 @@ def escape_html(s: str) -> str:
     return escape(s, quote=False)
 
 
-def render_card(*, title: str, body: str, category: str, label: str | None = None) -> str:
-    """HTML 카드. 동적값은 전부 escape. Telegram parse_mode=HTML."""
+def render_card(
+    *, title: str, body: str, category: str, label: str | None = None, url: str | None = None
+) -> str:
+    """HTML 카드. 동적값은 전부 escape. Telegram parse_mode=HTML. url 지정 시 링크 줄 추가(#27)."""
     cat = CATEGORY_LABEL.get(category, category)
     head = escape_html(label) if label else cat
-    return (
+    card = (
         f"<b>[{head}] {escape_html(title)}</b>\n"
         f"<pre>{escape_html(body)}</pre>"
     )
+    if url:
+        card += f'\n<a href="{escape_html(url)}">{escape_html(url)}</a>'
+    return card

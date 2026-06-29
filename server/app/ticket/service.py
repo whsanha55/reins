@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from app.config import settings
 from app.core.notify.notifier import NotifyMessage
 from app.core.notify.topic_parser import render_card
 from app.ticket.state import can_transition
@@ -134,7 +135,7 @@ async def transition_ticket(
     note: str | None = None,
 ) -> dict:
     row = await db.fetchrow(
-        "SELECT id, status, title, parent_id FROM tickets WHERE id=$1", ticket_id
+        "SELECT id, status, title, parent_id, project_id FROM tickets WHERE id=$1", ticket_id
     )
     if not row:
         raise TicketError(f"ticket {ticket_id} not found")
@@ -150,7 +151,9 @@ async def transition_ticket(
     # #18: done 전이만 알림. progressing/qa/cancel 전이는 알림 생략.
     if to == "done":
         body = f"{frm} → {to}" + (f"\n{note}" if note else "")
-        msg = NotifyMessage(render_card(title=row["title"], body=body, category="info"))
+        # #27: 알림에 티켓 딥링크 포함.
+        url = f"{settings.PUBLIC_BASE_URL}/project/{row['project_id']}/t/{ticket_id}"
+        msg = NotifyMessage(render_card(title=row["title"], body=body, category="info", url=url))
         await dispatcher.notify(
             category="info",
             payload_key=f"transition:{ticket_id}:{frm}:{to}",
@@ -166,7 +169,7 @@ async def transition_ticket(
 async def _maybe_complete_epic(db: Database, dispatcher: NotifyDispatcher, epic_id: int) -> None:
     """에픽의 모든 하위가 done/cancel 이면 에픽을 자동 done. (#21) 하위 0개면 무동작."""
     epic = await db.fetchrow(
-        "SELECT id, status, title FROM tickets WHERE id=$1 AND type='epic'", epic_id
+        "SELECT id, status, title, project_id FROM tickets WHERE id=$1 AND type='epic'", epic_id
     )
     if not epic or epic["status"] == "done":
         return
@@ -179,9 +182,10 @@ async def _maybe_complete_epic(db: Database, dispatcher: NotifyDispatcher, epic_
         db, epic_id, "transition",
         {"from": frm, "to": "done", "actor": "system", "note": "all children closed"},
     )
-    # #18: done 알림.
+    # #18: done 알림. #27: 딥링크 포함.
+    url = f"{settings.PUBLIC_BASE_URL}/project/{epic['project_id']}/t/{epic_id}"
     msg = NotifyMessage(
-        render_card(title=epic["title"], body=f"{frm} → done (하위 전체 종료)", category="info")
+        render_card(title=epic["title"], body=f"{frm} → done (하위 전체 종료)", category="info", url=url)
     )
     await dispatcher.notify(
         category="info", payload_key=f"epic-auto-done:{epic_id}", message=msg, ticket_id=epic_id
