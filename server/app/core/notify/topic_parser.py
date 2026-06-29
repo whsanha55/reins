@@ -54,3 +54,14 @@ def render_card(
     if url:
         card += f'\n<a href="{escape_html(url)}">{escape_html(url)}</a>'
     return card
+
+
+def render_release(*, items: list[dict]) -> str:
+    """묶음 done 1개 release 카드. items=[{id,title,url}]. #29: 배포 시 우루루 알림 → 1개.
+    각 줄 #id 가 딥링크. <pre> 미사용(앵커 클릭 가능)."""
+    head = f"<b>[release] {len(items)}건 done</b>"
+    lines = "\n".join(
+        f'• <a href="{escape_html(it["url"])}">#{it["id"]}</a> {escape_html(it["title"])}'
+        for it in items
+    )
+    return f"{head}\n{lines}"

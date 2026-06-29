@@ -1,7 +1,15 @@
 # tests/test_ticket_notify.py — #18: done 전이만 알림. #21: 하위 전체 종료 시 에픽 자동 done.
+# #29: 묶음 done 전이 → 1개 release 알림.
 from unittest.mock import AsyncMock
 
-from app.ticket.service import reopen_ticket, transition_ticket
+import pytest
+
+from app.ticket.service import (
+    TicketError,
+    reopen_ticket,
+    transition_batch,
+    transition_ticket,
+)
 
 
 async def test_notify_only_on_done():
@@ -61,3 +69,35 @@ async def test_epic_not_done_when_child_still_open():
     disp = AsyncMock()
     await transition_ticket(db, disp, ticket_id=2, to="done")
     assert not any("status='done'" in c.args[0] for c in db.execute.await_args_list)
+
+
+async def test_batch_done_single_release_notify():
+    # #29: 3개 qa → done 묶음 전이 → 우루루 대신 알림 1회(release 카드, 3개 딥링크).
+    db = AsyncMock()
+    db.fetch.return_value = [
+        {"id": 1, "status": "qa"}, {"id": 2, "status": "qa"}, {"id": 3, "status": "qa"}
+    ]
+    db.fetchrow.side_effect = [
+        {"id": 1, "status": "qa", "title": "a", "parent_id": None, "project_id": 1},
+        {"id": 2, "status": "qa", "title": "b", "parent_id": None, "project_id": 1},
+        {"id": 3, "status": "qa", "title": "c", "parent_id": None, "project_id": 1},
+    ]
+    db.fetchval.return_value = 1
+    disp = AsyncMock()
+    res = await transition_batch(db, disp, ids=[1, 2, 3], to="done")
+    assert disp.notify.await_count == 1  # N건 → 알림 1개
+    text = str(disp.notify.await_args.kwargs["message"].text)
+    assert "3건" in text
+    assert all(f"/t/{tid}" in text for tid in (1, 2, 3))
+    assert len(res["transitioned"]) == 3
+
+
+async def test_batch_invalid_aborts_before_mutation():
+    # 하나라도 무효 전이면 사전검증에서 raise — 변경/알림 없음(부분반영 방지).
+    db = AsyncMock()
+    db.fetch.return_value = [{"id": 1, "status": "qa"}, {"id": 2, "status": "done"}]
+    disp = AsyncMock()
+    with pytest.raises(TicketError):
+        await transition_batch(db, disp, ids=[1, 2], to="done")  # 2: done→done 무효
+    db.execute.assert_not_awaited()
+    disp.notify.assert_not_awaited()
