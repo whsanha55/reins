@@ -65,3 +65,21 @@ def render_release(*, items: list[dict]) -> str:
         for it in items
     )
     return f"{head}\n{lines}"
+
+
+# 결정 카드 인라인 키보드 콜백 접두어. api/telegram.py webhook 과 쌍.
+RESOLVE_CB_PREFIX = "resolve:"
+
+
+def resolve_keyboard(decision_id: int) -> dict:
+    """decision 카드 인라인 키보드. callback_data=resolve:{id}:{resolution}.
+    사람이 버튼 → Telegram webhook → resolve 자동(approved/rejected/changes)."""
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "✅ 승인", "callback_data": f"resolve:{decision_id}:approved"},
+                {"text": "❌ 거절", "callback_data": f"resolve:{decision_id}:rejected"},
+                {"text": "🔧 수정", "callback_data": f"resolve:{decision_id}:changes"},
+            ]
+        ]
+    }

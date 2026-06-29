@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # topic 자동생성 폭증 가드. 미설정 시 provisioner 자동생성 無.
     TELEGRAM_DEFAULT_CHAT_ID: str = ""
 
+    # Telegram webhook 수신(/api/telegram/webhook). 미설정 시 secret 검증 스킵(로컬).
+    TELEGRAM_WEBHOOK_SECRET: str = ""
+    # 콜백 허용 from.id 화이트리스트(콤마 구분). 미설정 시 스킵(로컬). 운영 필수.
+    TELEGRAM_ALLOWED_CHAT_IDS: str = ""
+
     # Watchdog (heartbeat 정체 감지). 0=off.
     WATCHDOG_INTERVAL_SEC: int = 300
     WATCHDOG_STALE_SEC: int = 1800  # 30분 무업데이트 → stalled

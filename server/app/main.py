@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent.watchdog import schedule as schedule_watchdog
-from app.api import agent, comments, decisions, deploy, ops, projects, tickets
+from app.api import agent, comments, decisions, deploy, ops, projects, telegram, tickets
 from app.config import settings
 from app.core.database import Database
 from app.core.notify.dispatcher import NotifyDispatcher
@@ -73,6 +73,7 @@ def create_app(db: Database | None = None) -> FastAPI:
     app.include_router(decisions.router)
     app.include_router(deploy.router)
     app.include_router(agent.router)
+    app.include_router(telegram.router)
     app.include_router(ops.router)
     return app
 

@@ -10,6 +10,8 @@ class NotifyMessage:
     """발신 단위. text 는 Telegram HTML (parse_mode=HTML). 동적값은 발신 전 escape_html 필수."""
 
     text: str
+    # 인라인 키보드(선택). Telegram reply_markup. 결정 카드의 ✅/❌ 버튼 등.
+    reply_markup: dict | None = None
 
 
 class Notifier(ABC):
