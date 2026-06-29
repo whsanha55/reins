@@ -195,8 +195,9 @@ async def transition_batch(
     note: str | None = None,
 ) -> dict:
     """#29: 묶음 전이. done 전이를 개별 알림 대신 1개 release 카드(딥링크 리스트)로 발송.
-    원자성: 전부 사전검증(can_transition) 후 적용 — 하나라도 무효면 변경 없이 raise.
+    원자성: 적용 전 모든 id 존재+전이 사전검증 — 하나라도 실패면 변경 없이 raise.
     ponytail: DB 실행 중간 실패(asyncpg 에러)는 부분반영 가능. 트랜잭션 필요 시 db.transaction 추가."""
+    ids = list(dict.fromkeys(ids))  # 중복 제거(순서 유지) — 중복 시 재전이 raise/부분반영 방지.
     if not ids:
         raise TicketError("ids empty")
     rows = await db.fetch(
@@ -223,16 +224,20 @@ async def transition_batch(
                 epic = await _maybe_complete_epic(db, r["parent_id"])
                 if epic:
                     epics[epic["id"]] = epic
-    # 자동 done 에픽도 같은 release 카드에 포함 → 진짜 1개.
-    items += [
-        {"id": e["id"], "title": e["title"], "url": _ticket_url(e["project_id"], e["id"])}
-        for e in epics.values()
-    ]
 
     if to == "done":
+        # 자동 done 에픽도 같은 release 카드에 포함 → 진짜 1개.
+        items += [
+            {"id": e["id"], "title": e["title"], "url": _ticket_url(e["project_id"], e["id"])}
+            for e in epics.values()
+        ]
         msg = NotifyMessage(render_release(items=items))
         key = "release:" + ":".join(str(i["id"]) for i in sorted(items, key=lambda x: x["id"]))
         await dispatcher.notify(category="info", payload_key=key, message=msg)
+    else:
+        # cancel 배치: release 카드 없음. 자동 done 에픽은 단일 경로와 동일하게 개별 알림.
+        for e in epics.values():
+            await _notify_epic_done(dispatcher, e)
     return {
         "transitioned": [{"id": r["id"], "from": r["from"], "to": to} for r in results],
         "epics_done": list(epics.keys()),

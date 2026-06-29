@@ -92,12 +92,46 @@ async def test_batch_done_single_release_notify():
     assert len(res["transitioned"]) == 3
 
 
-async def test_batch_invalid_aborts_before_mutation():
-    # 하나라도 무효 전이면 사전검증에서 raise — 변경/알림 없음(부분반영 방지).
+async def test_batch_missing_id_aborts_before_mutation():
+    # 존재하지 않는 id가 섞이면 사전검증에서 raise — 변경/알림 없음(부분반영 방지).
     db = AsyncMock()
-    db.fetch.return_value = [{"id": 1, "status": "qa"}, {"id": 2, "status": "done"}]
+    db.fetch.return_value = [{"id": 1, "status": "qa"}]  # id 2 없음
     disp = AsyncMock()
     with pytest.raises(TicketError):
-        await transition_batch(db, disp, ids=[1, 2], to="done")  # 2: done→done 무효
+        await transition_batch(db, disp, ids=[1, 2], to="done")
     db.execute.assert_not_awaited()
     disp.notify.assert_not_awaited()
+
+
+async def test_batch_dedupes_ids():
+    # 중복 id → 1회만 전이(재전이/중복 카드줄 방지).
+    db = AsyncMock()
+    db.fetch.return_value = [{"id": 1, "status": "qa"}]
+    db.fetchrow.return_value = {
+        "id": 1, "status": "qa", "title": "a", "parent_id": None, "project_id": 1
+    }
+    db.fetchval.return_value = 1
+    disp = AsyncMock()
+    res = await transition_batch(db, disp, ids=[1, 1], to="done")
+    assert len(res["transitioned"]) == 1
+    assert "1건" in str(disp.notify.await_args.kwargs["message"].text)
+
+
+async def test_batch_cancel_epic_auto_done_notifies():
+    # cancel 배치: release 카드 없음. 마지막 하위 cancel로 에픽 자동 done → 에픽 개별 알림(단일 경로 parity).
+    db = AsyncMock()
+    db.fetch.side_effect = [
+        [{"id": 2, "status": "qa"}],   # 사전검증
+        [{"status": "cancel"}],        # 에픽 children 전체 종료
+    ]
+    db.fetchrow.side_effect = [
+        {"id": 2, "status": "qa", "title": "child", "parent_id": 10, "project_id": 1},
+        {"id": 10, "status": "progressing", "title": "epic", "project_id": 1},
+    ]
+    db.fetchval.return_value = 1
+    disp = AsyncMock()
+    res = await transition_batch(db, disp, ids=[2], to="cancel")
+    assert disp.notify.await_count == 1  # release 카드 X, 에픽 done 알림만
+    text = str(disp.notify.await_args.kwargs["message"].text)
+    assert "/t/10" in text and "하위 전체 종료" in text
+    assert res["epics_done"] == [10]
