@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from app.config import settings
 from app.core.notify.notifier import NotifyMessage
-from app.core.notify.topic_parser import render_card
+from app.core.notify.topic_parser import render_card, render_release
 from app.ticket.state import can_transition
 
 if TYPE_CHECKING:
@@ -125,15 +125,15 @@ async def update_ticket(
     return dict(row) if row else None
 
 
-async def transition_ticket(
-    db: Database,
-    dispatcher: NotifyDispatcher,
-    *,
-    ticket_id: int,
-    to: str,
-    actor: str = "user",
-    note: str | None = None,
+def _ticket_url(project_id: int, ticket_id: int) -> str:
+    return f"{settings.PUBLIC_BASE_URL}/project/{project_id}/t/{ticket_id}"
+
+
+async def _apply_transition(
+    db: Database, *, ticket_id: int, to: str, actor: str, note: str | None
 ) -> dict:
+    """검증 + 상태 update + 이벤트 기록. 알림은 호출자 책임(단일=개별, 배치=묶음).
+    반환: {id, from, to, title, parent_id, project_id}."""
     row = await db.fetchrow(
         "SELECT id, status, title, parent_id, project_id FROM tickets WHERE id=$1", ticket_id
     )
@@ -148,12 +148,29 @@ async def transition_ticket(
     await record_event(
         db, ticket_id, "transition", {"from": frm, "to": to, "actor": actor, "note": note}
     )
+    return {
+        "id": ticket_id, "from": frm, "to": to,
+        "title": row["title"], "parent_id": row["parent_id"], "project_id": row["project_id"],
+    }
+
+
+async def transition_ticket(
+    db: Database,
+    dispatcher: NotifyDispatcher,
+    *,
+    ticket_id: int,
+    to: str,
+    actor: str = "user",
+    note: str | None = None,
+) -> dict:
+    res = await _apply_transition(db, ticket_id=ticket_id, to=to, actor=actor, note=note)
+    frm = res["from"]
     # #18: done 전이만 알림. progressing/qa/cancel 전이는 알림 생략.
     if to == "done":
         body = f"{frm} → {to}" + (f"\n{note}" if note else "")
         # #27: 알림에 티켓 딥링크 포함.
-        url = f"{settings.PUBLIC_BASE_URL}/project/{row['project_id']}/t/{ticket_id}"
-        msg = NotifyMessage(render_card(title=row["title"], body=body, category="info", url=url))
+        url = _ticket_url(res["project_id"], ticket_id)
+        msg = NotifyMessage(render_card(title=res["title"], body=body, category="info", url=url))
         await dispatcher.notify(
             category="info",
             payload_key=f"transition:{ticket_id}:{frm}:{to}",
@@ -161,34 +178,104 @@ async def transition_ticket(
             ticket_id=ticket_id,
         )
     # #21: 하위 티켓이 종료(done/cancel)되어 에픽의 모든 하위가 종료되면 에픽 자동 done.
-    if to in ("done", "cancel") and row["parent_id"]:
-        await _maybe_complete_epic(db, dispatcher, row["parent_id"])
+    if to in ("done", "cancel") and res["parent_id"]:
+        epic = await _maybe_complete_epic(db, res["parent_id"])
+        if epic:
+            await _notify_epic_done(dispatcher, epic)
     return {"id": ticket_id, "from": frm, "to": to}
 
 
-async def _maybe_complete_epic(db: Database, dispatcher: NotifyDispatcher, epic_id: int) -> None:
-    """에픽의 모든 하위가 done/cancel 이면 에픽을 자동 done. (#21) 하위 0개면 무동작."""
+async def transition_batch(
+    db: Database,
+    dispatcher: NotifyDispatcher,
+    *,
+    ids: list[int],
+    to: str,
+    actor: str = "user",
+    note: str | None = None,
+) -> dict:
+    """#29: 묶음 전이. done 전이를 개별 알림 대신 1개 release 카드(딥링크 리스트)로 발송.
+    원자성: 적용 전 모든 id 존재+전이 사전검증 — 하나라도 실패면 변경 없이 raise.
+    ponytail: DB 실행 중간 실패(asyncpg 에러)는 부분반영 가능. 트랜잭션 필요 시 db.transaction 추가."""
+    ids = list(dict.fromkeys(ids))  # 중복 제거(순서 유지) — 중복 시 재전이 raise/부분반영 방지.
+    if not ids:
+        raise TicketError("ids empty")
+    rows = await db.fetch(
+        "SELECT id, status FROM tickets WHERE id = ANY($1::int[])", ids
+    )
+    found = {r["id"]: r["status"] for r in rows}
+    for tid in ids:
+        if tid not in found:
+            raise TicketError(f"ticket {tid} not found")
+        if not can_transition(found[tid], to):
+            raise TicketError(f"invalid transition {found[tid]} -> {to} (ticket {tid})")
+
+    results = [
+        await _apply_transition(db, ticket_id=tid, to=to, actor=actor, note=note) for tid in ids
+    ]
+    items = [
+        {"id": r["id"], "title": r["title"], "url": _ticket_url(r["project_id"], r["id"])}
+        for r in results
+    ]
+    epics: dict[int, dict] = {}
+    if to in ("done", "cancel"):
+        for r in results:
+            if r["parent_id"]:
+                epic = await _maybe_complete_epic(db, r["parent_id"])
+                if epic:
+                    epics[epic["id"]] = epic
+
+    if to == "done":
+        # 자동 done 에픽도 같은 release 카드에 포함 → 진짜 1개.
+        items += [
+            {"id": e["id"], "title": e["title"], "url": _ticket_url(e["project_id"], e["id"])}
+            for e in epics.values()
+        ]
+        msg = NotifyMessage(render_release(items=items))
+        key = "release:" + ":".join(str(i["id"]) for i in sorted(items, key=lambda x: x["id"]))
+        await dispatcher.notify(category="info", payload_key=key, message=msg)
+    else:
+        # cancel 배치: release 카드 없음. 자동 done 에픽은 단일 경로와 동일하게 개별 알림.
+        for e in epics.values():
+            await _notify_epic_done(dispatcher, e)
+    return {
+        "transitioned": [{"id": r["id"], "from": r["from"], "to": to} for r in results],
+        "epics_done": list(epics.keys()),
+    }
+
+
+async def _maybe_complete_epic(db: Database, epic_id: int) -> dict | None:
+    """에픽의 모든 하위가 done/cancel 이면 에픽을 자동 done. (#21) 하위 0개면 무동작.
+    반환: 자동 done 된 에픽 {id,title,project_id,from} (없으면 None). 알림은 호출자."""
     epic = await db.fetchrow(
         "SELECT id, status, title, project_id FROM tickets WHERE id=$1 AND type='epic'", epic_id
     )
     if not epic or epic["status"] == "done":
-        return
+        return None
     children = await db.fetch("SELECT status FROM tickets WHERE parent_id=$1", epic_id)
     if not children or not all(c["status"] in ("done", "cancel") for c in children):
-        return
+        return None
     frm = epic["status"]
     await db.execute("UPDATE tickets SET status='done', updated_at=now() WHERE id=$1", epic_id)
     await record_event(
         db, epic_id, "transition",
         {"from": frm, "to": "done", "actor": "system", "note": "all children closed"},
     )
+    return {"id": epic["id"], "title": epic["title"], "project_id": epic["project_id"], "from": frm}
+
+
+async def _notify_epic_done(dispatcher: NotifyDispatcher, epic: dict) -> None:
     # #18: done 알림. #27: 딥링크 포함.
-    url = f"{settings.PUBLIC_BASE_URL}/project/{epic['project_id']}/t/{epic_id}"
+    url = _ticket_url(epic["project_id"], epic["id"])
     msg = NotifyMessage(
-        render_card(title=epic["title"], body=f"{frm} → done (하위 전체 종료)", category="info", url=url)
+        render_card(
+            title=epic["title"], body=f"{epic['from']} → done (하위 전체 종료)",
+            category="info", url=url,
+        )
     )
     await dispatcher.notify(
-        category="info", payload_key=f"epic-auto-done:{epic_id}", message=msg, ticket_id=epic_id
+        category="info", payload_key=f"epic-auto-done:{epic['id']}", message=msg,
+        ticket_id=epic["id"],
     )
 
 

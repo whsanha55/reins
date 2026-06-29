@@ -14,6 +14,7 @@ from app.ticket.service import (
     list_tickets,
     record_event,
     reopen_ticket,
+    transition_batch,
     transition_ticket,
     update_ticket,
 )
@@ -38,6 +39,12 @@ class TicketPatch(BaseModel):
 
 
 class TransitionIn(BaseModel):
+    to: str
+    note: str | None = None
+
+
+class TransitionBatchIn(BaseModel):
+    ids: list[int] = Field(min_length=1)
     to: str
     note: str | None = None
 
@@ -95,6 +102,19 @@ async def post_transition(
     try:
         return await transition_ticket(
             db, dispatcher, ticket_id=tid, to=body.to, note=body.note
+        )
+    except TicketError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/transition-batch")
+async def post_transition_batch(
+    body: TransitionBatchIn, db=Depends(get_db), dispatcher=Depends(get_dispatcher)
+):
+    """#29: 묶음 전이. done 묶음을 1개 release 알림으로 발송."""
+    try:
+        return await transition_batch(
+            db, dispatcher, ids=body.ids, to=body.to, note=body.note
         )
     except TicketError as e:
         raise HTTPException(400, str(e)) from e

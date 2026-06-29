@@ -1,5 +1,11 @@
 # tests/test_topic_parser.py — topic 분류 + escape + 카드 render.
-from app.core.notify.topic_parser import GATES, classify, escape_html, render_card
+from app.core.notify.topic_parser import (
+    GATES,
+    classify,
+    escape_html,
+    render_card,
+    render_release,
+)
 
 
 def test_classify_gate_is_decision():
@@ -30,3 +36,16 @@ def test_render_card_escapes_html_injection():
     assert "<i>x" not in html
     assert "&lt;i&gt;x" in html
     assert "<script>" not in html
+
+
+def test_render_release_lists_items_with_links():
+    # #29: release 카드 = 헤더 + 항목별 #id 딥링크. title escape 보존.
+    out = render_release(items=[
+        {"id": 12, "title": "딥링크", "url": "https://h/project/1/t/12"},
+        {"id": 13, "title": "<x>", "url": "https://h/project/1/t/13"},
+    ])
+    assert "2건 done" in out
+    assert 'href="https://h/project/1/t/12"' in out
+    assert ">#12<" in out
+    assert "&lt;x&gt;" in out  # title escape
+    assert "<x>" not in out
