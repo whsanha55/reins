@@ -109,7 +109,8 @@ function Main() {
         </header>
 
         <section className="flex-1 overflow-hidden bg-bg">
-          {tab === "board" && project && (
+          {/* board 는 new 모달 뒤에도 유지 — 작성 중 컨텍스트 보존. */}
+          {(tab === "board" || tab === "new") && project && (
             <Board
               projectId={project.id}
               projectName={project.name}
@@ -137,9 +138,6 @@ function Main() {
           )}
           {tab === "decisions" && <DecisionQueue toast={toast} />}
           {tab === "deploy" && <DeployView toast={toast} />}
-          {tab === "new" && project && (
-            <TicketForm projectId={project.id} toast={toast} onDone={() => navigate(`/project/${project.id}`)} />
-          )}
           {tab === "new" && !project && (
             <div className="flex h-full items-center justify-center text-sm text-dim">
               먼저 프로젝트를 만드세요.
@@ -155,7 +153,40 @@ function Main() {
           toast={toast}
         />
       )}
+      {route.view === "new" && project && (
+        <Modal onClose={() => navigate(`/project/${project.id}`)}>
+          <TicketForm
+            projectId={project.id}
+            toast={toast}
+            onDone={() => navigate(`/project/${project.id}`)}
+          />
+        </Modal>
+      )}
       {toast.node}
+    </div>
+  );
+}
+
+// 플로팅 모달 — backdrop 클릭/Esc 로 닫힘. 드로어(z-30) 위, 토스트(z-50) 아래.
+function Modal({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-start justify-center bg-black/40 p-4 pt-[8vh]"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[84vh] w-[min(560px,92vw)] overflow-auto rounded-lg border border-border2 bg-surface shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
     </div>
   );
 }
