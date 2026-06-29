@@ -69,3 +69,27 @@ async def test_watchdog_no_stale_is_noop():
     db.fetch.return_value = []
     out = await sweep(db, AsyncMock(), stale_sec=1800)
     assert out == []
+
+
+def _failed_result_db(fail_count):
+    """run 조회 → ticket 조회 순으로 fetchrow 분리(side_effect). 실제론 run.status=running, ticket.status=progressing."""
+    db = AsyncMock()
+    db.fetchrow.side_effect = [
+        {"id": 1, "ticket_id": 7, "status": "running"},  # submit_result run 조회
+        {"id": 7, "status": "progressing", "title": "t", "parent_id": None, "project_id": 1},  # _apply_transition ticket 조회
+    ]
+    db.fetchval.return_value = fail_count
+    return db
+
+
+async def test_submit_result_failed_rolls_back_to_todo():
+    """#32 영역4: valid failed result → 티켓 todo 복귀(재claim). 누적 < MAX."""
+    out = await submit_result(_failed_result_db(1), AsyncMock(), run_id=1, payload={"status": "failed", "summary": "boom"})
+    assert out["status"] == "failed"
+    assert out["ticket"] == "todo"
+
+
+async def test_submit_result_failed_cancels_at_max():
+    """#32 영역4: 누적 실패 MAX(3) 도달 → cancel(포기)."""
+    out = await submit_result(_failed_result_db(3), AsyncMock(), run_id=1, payload={"status": "failed", "summary": "boom"})
+    assert out["ticket"] == "cancel"
