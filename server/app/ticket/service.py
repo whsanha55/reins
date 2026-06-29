@@ -135,7 +135,7 @@ async def transition_ticket(
     note: str | None = None,
 ) -> dict:
     row = await db.fetchrow(
-        "SELECT id, status, title, project_id FROM tickets WHERE id=$1", ticket_id
+        "SELECT id, status, title, parent_id, project_id FROM tickets WHERE id=$1", ticket_id
     )
     if not row:
         raise TicketError(f"ticket {ticket_id} not found")
@@ -160,7 +160,36 @@ async def transition_ticket(
             message=msg,
             ticket_id=ticket_id,
         )
+    # #21: 하위 티켓이 종료(done/cancel)되어 에픽의 모든 하위가 종료되면 에픽 자동 done.
+    if to in ("done", "cancel") and row["parent_id"]:
+        await _maybe_complete_epic(db, dispatcher, row["parent_id"])
     return {"id": ticket_id, "from": frm, "to": to}
+
+
+async def _maybe_complete_epic(db: Database, dispatcher: NotifyDispatcher, epic_id: int) -> None:
+    """에픽의 모든 하위가 done/cancel 이면 에픽을 자동 done. (#21) 하위 0개면 무동작."""
+    epic = await db.fetchrow(
+        "SELECT id, status, title, project_id FROM tickets WHERE id=$1 AND type='epic'", epic_id
+    )
+    if not epic or epic["status"] == "done":
+        return
+    children = await db.fetch("SELECT status FROM tickets WHERE parent_id=$1", epic_id)
+    if not children or not all(c["status"] in ("done", "cancel") for c in children):
+        return
+    frm = epic["status"]
+    await db.execute("UPDATE tickets SET status='done', updated_at=now() WHERE id=$1", epic_id)
+    await record_event(
+        db, epic_id, "transition",
+        {"from": frm, "to": "done", "actor": "system", "note": "all children closed"},
+    )
+    # #18: done 알림. #27: 딥링크 포함.
+    url = f"{settings.PUBLIC_BASE_URL}/project/{epic['project_id']}/t/{epic_id}"
+    msg = NotifyMessage(
+        render_card(title=epic["title"], body=f"{frm} → done (하위 전체 종료)", category="info", url=url)
+    )
+    await dispatcher.notify(
+        category="info", payload_key=f"epic-auto-done:{epic_id}", message=msg, ticket_id=epic_id
+    )
 
 
 async def reopen_ticket(
