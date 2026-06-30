@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING
 
 from app.core.notify.notifier import NotifyMessage
 from app.core.notify.topic_parser import GATE_LABEL, classify, render_card, resolve_keyboard
-from app.ticket.service import record_event
+from app.decision.github_merge import MergeError, extract_pr_number, merge_pr_github
+from app.deploy.service import create_job
+from app.ticket.service import record_event, transition_ticket
 
 if TYPE_CHECKING:
     from app.core.database import Database
@@ -114,9 +116,93 @@ async def resolve(
             message=msg,
             ticket_id=row["ticket_id"],
         )
+        # gate merge/deploy 승인 → PR 머지(merge만) + deploy job + ticket done 자동화.
+        if resolution == "approved" and row["gate"] in ("merge", "deploy"):
+            await _apply_approved_automation(db, dispatcher, decision=row, note=note)
     return {
         "id": decision_id,
         "applied": applied,
         "status": resolution,
         "previous_status": row["status"],
     }
+
+
+async def _latest_diff_url(db: Database, ticket_id: int) -> str | None:
+    """ticket_events 에서 가장 최근 kind='diff' 의 payload.url (PR URL)."""
+    row = await db.fetchrow(
+        "SELECT payload FROM ticket_events WHERE ticket_id=$1 AND kind='diff' "
+        "ORDER BY id DESC LIMIT 1",
+        ticket_id,
+    )
+    if not row:
+        return None
+    payload = row.get("payload") or {}
+    return payload.get("url") if isinstance(payload, dict) else None
+
+
+async def _automation_failed(
+    db: Database,
+    dispatcher: NotifyDispatcher,
+    ticket_id: int,
+    gate: str,
+    reason: str,
+) -> None:
+    """머지 자동화 실패 → ticket progressing 유지(전이 X) + 이벤트 + 텔레그램 알림."""
+    await record_event(db, ticket_id, "automation_failed", {"gate": gate, "reason": reason})
+    msg = NotifyMessage(
+        render_card(
+            title=f"티켓 #{ticket_id} 자동화 실패 ({gate})",
+            body=reason,
+            category="info",
+        )
+    )
+    await dispatcher.notify(
+        category="info",
+        payload_key=f"automation_failed:{ticket_id}:{gate}",
+        message=msg,
+        ticket_id=ticket_id,
+    )
+
+
+async def _apply_approved_automation(
+    db: Database,
+    dispatcher: NotifyDispatcher,
+    *,
+    decision: dict,
+    note: str | None,
+) -> None:
+    """gate merge/deploy approved 부작용. 머지 실패 시 progressing 유지(early return).
+    머지 성공 → deploy job(ref=main, merge-auto) + ticket done. deploy 게이트는 머지 생략."""
+    ticket_id = decision["ticket_id"]
+    gate = decision["gate"]
+    project_id = await db.fetchval("SELECT project_id FROM tickets WHERE id=$1", ticket_id)
+
+    if gate == "merge":
+        diff_url = await _latest_diff_url(db, ticket_id)
+        pr = extract_pr_number(diff_url)
+        if pr is None:
+            await _automation_failed(db, dispatcher, ticket_id, gate, f"PR 번호 추출 실패: {diff_url}")
+            return
+        try:
+            res = await merge_pr_github(pr_number=pr, commit_title=f"#{ticket_id} auto-merge")
+        except MergeError as e:
+            await _automation_failed(db, dispatcher, ticket_id, gate, f"머지 실패: {e}")
+            return
+        await record_event(
+            db,
+            ticket_id,
+            "pr_merged",
+            {"pr": pr, "sha": res.get("sha"), "decision_id": decision["id"]},
+        )
+        await create_job(db, project_id=project_id, ref="main", triggered_by="merge-auto")
+    elif gate == "deploy":
+        await create_job(db, project_id=project_id, ref="main", triggered_by="merge-auto")
+
+    await transition_ticket(
+        db,
+        dispatcher,
+        ticket_id=ticket_id,
+        to="done",
+        actor="merge-bot",
+        note=f"gate={gate} approved 자동화 완료",
+    )
