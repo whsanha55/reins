@@ -2,6 +2,7 @@
 # CRITICAL GAP: 중복 resolve 1회만 적용(UPDATE...WHERE status='pending' RETURNING).
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from app.core.notify.notifier import NotifyMessage
@@ -128,7 +129,8 @@ async def resolve(
 
 
 async def _latest_diff_url(db: Database, ticket_id: int) -> str | None:
-    """ticket_events 에서 가장 최근 kind='diff' 의 payload.url (PR URL)."""
+    """ticket_events 에서 가장 최근 kind='diff' 의 payload.url (PR URL).
+    asyncpg JSONB → str 일 수 있어 json.loads 후 접근."""
     row = await db.fetchrow(
         "SELECT payload FROM ticket_events WHERE ticket_id=$1 AND kind='diff' "
         "ORDER BY id DESC LIMIT 1",
@@ -136,8 +138,15 @@ async def _latest_diff_url(db: Database, ticket_id: int) -> str | None:
     )
     if not row:
         return None
-    payload = row.get("payload") or {}
-    return payload.get("url") if isinstance(payload, dict) else None
+    payload = dict(row).get("payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(payload, dict):
+        return None
+    return payload.get("url")
 
 
 async def _automation_failed(
