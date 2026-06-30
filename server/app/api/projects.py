@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.auth.token import require_token
-from app.deps import get_db
+from app.core.notify.dispatcher import NotifyDispatcher
+from app.core.notify.notifier import NotifyMessage
+from app.core.notify.topic_parser import render_release
+from app.deps import get_db, get_dispatcher
+from app.ticket.service import _ticket_url, close_open_epics
 
 router = APIRouter(prefix="/api/projects", tags=["projects"], dependencies=[Depends(require_token)])
 
@@ -87,6 +91,7 @@ async def delete_project(pid: int, db=Depends(get_db)):
 
 
 # ── sprints (#14): 프로젝트별 스프린트. 최신 started_at = 활성. 보드가 done/cancel 노출 필터에 사용.
+# #36: 스프린트 시작(= 이전 스프린트 종료) 시 미종료 에픽을 자동 done 으로 닫아 보드에서 숨김.
 @router.get("/{pid}/sprints")
 async def list_sprints(pid: int, db=Depends(get_db)):
     rows = await db.fetch(
@@ -96,10 +101,25 @@ async def list_sprints(pid: int, db=Depends(get_db)):
 
 
 @router.post("/{pid}/sprints", status_code=status.HTTP_201_CREATED)
-async def create_sprint(pid: int, body: SprintIn, db=Depends(get_db)):
+async def create_sprint(
+    pid: int, body: SprintIn, db=Depends(get_db), dispatcher: NotifyDispatcher = Depends(get_dispatcher)
+):
     if not await db.fetchrow("SELECT id FROM projects WHERE id=$1", pid):
         raise HTTPException(404, "project not found")
+    # #36: 새 스프린트 시작(= 이전 종료) 직전에 미종료 에픽을 done 으로 닫는다.
+    # 에픽 updated_at < 새 sprint.started_at 이 되도록 새 스프린트 INSERT 이전에 실행.
+    closed_epics = await close_open_epics(db, pid)
     row = await db.fetchrow(
         "INSERT INTO sprints (project_id, name) VALUES ($1, $2) RETURNING *", pid, body.name
     )
+    # 닫힌 에픽이 있으면 release 카드로 알림(transition_batch 패턴과 동일).
+    if closed_epics:
+        items = [
+            {"id": e["id"], "title": e["title"], "url": _ticket_url(e["project_id"], e["id"])}
+            for e in closed_epics
+        ]
+        key = "release:sprint-close:" + ":".join(str(i["id"]) for i in sorted(items, key=lambda x: x["id"]))
+        await dispatcher.notify(
+            category="info", payload_key=key, message=NotifyMessage(render_release(items=items))
+        )
     return dict(row)
