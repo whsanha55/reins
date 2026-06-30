@@ -185,9 +185,12 @@ export const api = {
       req<{ read: boolean }>(`/api/tickets/${ticketId}/comments/${cid}/read`, { method: "POST" }),
   },
   decisions: {
-    list: (status?: DecisionStatus) => {
-      const q = status ? `?status=${status}` : "";
-      return req<Decision[]>(`/api/decisions${q}`);
+    list: (status?: DecisionStatus, ticketId?: number) => {
+      const params = new URLSearchParams();
+      if (status) params.set("status", status);
+      if (ticketId != null) params.set("ticket_id", String(ticketId));
+      const q = params.toString();
+      return req<Decision[]>(`/api/decisions${q ? `?${q}` : ""}`);
     },
     resolve: (id: number, resolution: Resolution, note?: string) =>
       req<{ applied: boolean; status: string }>(`/api/decisions/${id}/resolve`, {

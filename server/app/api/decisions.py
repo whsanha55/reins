@@ -27,8 +27,9 @@ class ResolveIn(BaseModel):
 async def get_decisions(
     db=Depends(get_db),
     status_: str | None = Query(default=None, alias="status"),
+    ticket_id: int | None = Query(default=None),
 ):
-    return await list_decisions(db, status_)
+    return await list_decisions(db, status_, ticket_id=ticket_id)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
