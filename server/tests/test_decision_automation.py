@@ -30,6 +30,16 @@ def test_extract_pr_number():
     assert extract_pr_number(None) is None
 
 
+# ── 1b. _latest_diff_url — asyncpg JSONB str 처리 ─────────────────
+async def test_latest_diff_url_handles_jsonb_str():
+    from app.decision.service import _latest_diff_url
+
+    db = AsyncMock()
+    db.fetchrow.return_value = {"payload": '{"url": "https://github.com/whsanha55/reins/pull/17"}'}
+    url = await _latest_diff_url(db, 36)
+    assert url == "https://github.com/whsanha55/reins/pull/17"
+
+
 # ── 2. merge gate 승인 → 머지 + deploy job + done ─────────────────
 async def test_resolve_approved_merge_triggers_merge_deploy_done(monkeypatch):
     db = AsyncMock()
