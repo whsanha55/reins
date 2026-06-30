@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     # 콜백 허용 from.id 화이트리스트(콤마 구분). 미설정 시 스킵(로컬). 운영 필수.
     TELEGRAM_ALLOWED_CHAT_IDS: str = ""
 
+    # GitHub 자동 머지(resolve approved + gate merge → PR squash 머지). 토큰 미설정 시 머지 스킵.
+    GITHUB_TOKEN: str = ""
+    GITHUB_REPO_OWNER: str = "whsanha55"
+    GITHUB_REPO_NAME: str = "reins"
+
     # Watchdog (heartbeat 정체 감지). 0=off.
     WATCHDOG_INTERVAL_SEC: int = 300
     WATCHDOG_STALE_SEC: int = 1800  # 30분 무업데이트 → stalled
