@@ -279,6 +279,38 @@ async def _notify_epic_done(dispatcher: NotifyDispatcher, epic: dict) -> None:
     )
 
 
+async def close_open_epics(db: Database, project_id: int) -> list[dict]:
+    """프로젝트의 미종료(todo|progressing|qa) 에픽 전부 → done. (#36 스프린트 종료 시)
+
+    새 스프린트 시작 직전에 호출되어, 종료되지 않은 에픽을 done 으로 닫는다.
+    그러면 보드 스프린트 필터(updated_at < sprint.started_at 인 done/cancel 숨김)가
+    이 에픽들도 숨겨 "계속 나오네" 문제를 해결한다.
+
+    이미 done/cancel 인 에픽은 건드리지 않는다. 반환: 닫힌 에픽 [{id,title,project_id,from}].
+    알림은 호출자(release 카드 등) 책임.
+    """
+    rows = await db.fetch(
+        "SELECT id, status, title, project_id FROM tickets "
+        "WHERE project_id=$1 AND type='epic' AND status NOT IN ('done','cancel')",
+        project_id,
+    )
+    closed: list[dict] = []
+    for epic in rows:
+        frm = epic["status"]
+        await db.execute(
+            "UPDATE tickets SET status='done', updated_at=now() WHERE id=$1", epic["id"]
+        )
+        await record_event(
+            db, epic["id"], "transition",
+            {"from": frm, "to": "done", "actor": "system", "note": "sprint ended"},
+        )
+        closed.append(
+            {"id": epic["id"], "title": epic["title"],
+             "project_id": epic["project_id"], "from": frm}
+        )
+    return closed
+
+
 async def reopen_ticket(
     db: Database, dispatcher: NotifyDispatcher, *, ticket_id: int
 ) -> dict:
