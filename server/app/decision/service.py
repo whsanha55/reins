@@ -65,14 +65,24 @@ async def request_decision(
     return d
 
 
-async def list_decisions(db: Database, status: str | None = None) -> list[dict]:
-    if status:
-        rows = await db.fetch(
-            "SELECT * FROM decisions WHERE status=$1 ORDER BY created_at ASC",
-            status,
-        )
-    else:
-        rows = await db.fetch("SELECT * FROM decisions ORDER BY created_at ASC")
+async def list_decisions(
+    db: Database,
+    status: str | None = None,
+    ticket_id: int | None = None,
+) -> list[dict]:
+    # 동적 WHERE 조건 조립. ticket_id 필터(#37): 결정 큐를 티켓 컨텍스트에서 보려면 필요.
+    where = ["TRUE"]
+    args: list = []
+    if status is not None:
+        args.append(status)
+        where.append(f"status=${len(args)}")
+    if ticket_id is not None:
+        args.append(ticket_id)
+        where.append(f"ticket_id=${len(args)}")
+    rows = await db.fetch(
+        f"SELECT * FROM decisions WHERE {' AND '.join(where)} ORDER BY created_at ASC",
+        *args,
+    )
     return [dict(r) for r in rows]
 
 

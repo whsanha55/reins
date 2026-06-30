@@ -1,12 +1,25 @@
-// TicketDrawer — 우측 드로어. Comments(기본·agent-read ✓) / Timeline(커서 페이지네이션) 탭.
+// TicketDrawer — 우측 드로어. Comments(기본·agent-read ✓) / Timeline / Decisions 탭.
 // 상태 전이는 보드 드래그앤드롭으로 — 드로어엔 전이 버튼 없음.
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CheckCheck, Maximize2, MessageSquare, Minimize2, Pencil, X } from "lucide-react";
-import { api } from "../api";
+import { Check, CheckCheck, Maximize2, MessageSquare, Minimize2, Pencil, Scale, X } from "lucide-react";
+import { api, type Decision, type Gate, type Resolution } from "../api";
 import { ErrorState, Spinner, StatusBadge, isCmdEnter, type ToastApi } from "./ui";
 import { Markdown } from "./Markdown";
+
+const GATE_LABEL: Record<Gate, string> = {
+  pr_open: "PR 오픈",
+  merge: "머지",
+  deploy: "배포",
+  spec_ambiguous: "스펙 애매",
+};
+
+const RESOLUTION_LABEL: Record<string, string> = {
+  approved: "승인",
+  rejected: "거절",
+  changes: "변경요청",
+};
 
 export function TicketDrawer({
   ticketId,
@@ -18,7 +31,7 @@ export function TicketDrawer({
   toast: ToastApi;
 }) {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"timeline" | "comments">("comments");
+  const [tab, setTab] = useState<"timeline" | "comments" | "decisions">("comments");
   const [wide, setWide] = useState(false);
 
   const { data: ticket, isLoading, error, refetch } = useQuery({
@@ -147,9 +160,19 @@ export function TicketDrawer({
             <TabBtn active={tab === "timeline"} onClick={() => setTab("timeline")}>
               Timeline
             </TabBtn>
+            <TabBtn active={tab === "decisions"} onClick={() => setTab("decisions")}>
+              <Scale className="mr-1 inline h-3.5 w-3.5" />
+              Decisions
+            </TabBtn>
           </div>
 
-          {tab === "comments" ? <Comments ticketId={ticketId} toast={toast} /> : <Timeline ticketId={ticketId} />}
+          {tab === "comments" ? (
+            <Comments ticketId={ticketId} toast={toast} />
+          ) : tab === "timeline" ? (
+            <Timeline ticketId={ticketId} />
+          ) : (
+            <Decisions ticketId={ticketId} toast={toast} />
+          )}
         </div>
       )}
     </div>
@@ -313,5 +336,123 @@ function Comments({ ticketId, toast }: { ticketId: number; toast: ToastApi }) {
         </button>
       </form>
     </div>
+  );
+}
+
+// Decisions(#37): 티켓 컨텍스트에서 연관 결정을 보고 바로 resolve. 결정 큐 탭과 별개.
+function Decisions({ ticketId, toast }: { ticketId: number; toast: ToastApi }) {
+  const qc = useQueryClient();
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["decisions", "ticket", ticketId],
+    queryFn: () => api.decisions.list(undefined, ticketId),
+  });
+
+  const resolve = useMutation({
+    mutationFn: (vars: { id: number; resolution: Resolution }) =>
+      api.decisions.resolve(vars.id, vars.resolution),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["decisions", "ticket", ticketId] });
+      qc.invalidateQueries({ queryKey: ["decisions", "pending"] });
+    },
+    onSuccess: (_d, vars) => toast.show(`결정 ${vars.resolution} 처리됨`),
+  });
+
+  if (isLoading) return <Spinner label="결정 로드 중" />;
+  if (error) return <ErrorState message={String((error as Error).message)} />;
+  if (!data || data.length === 0)
+    return <p className="px-4 py-6 text-sm text-dim">이 티켓에 결정 없음</p>;
+
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3">
+      {data.map((d) => (
+        <DecisionCard key={d.id} d={d} pending={resolve.isPending} onResolve={resolve.mutate} />
+      ))}
+    </div>
+  );
+}
+
+function DecisionCard({
+  d,
+  pending,
+  onResolve,
+}: {
+  d: Decision;
+  pending: boolean;
+  onResolve: (vars: { id: number; resolution: Resolution }) => void;
+}) {
+  const isPending = d.status === "pending";
+  return (
+    <div
+      className={`rounded-lg border p-3 ${
+        isPending ? "border-warn bg-warnsoft/40" : "border-border2 bg-surface2"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span className="rounded border border-border2 bg-surface px-1.5 py-0.5 text-[11px] text-muted">
+          {GATE_LABEL[d.gate]}
+        </span>
+        {isPending ? (
+          <span className="rounded border border-warn bg-warnsoft px-1.5 py-0.5 text-[11px] font-medium text-warn">
+            결정필요
+          </span>
+        ) : (
+          <span className="rounded px-1.5 py-0.5 text-[11px] font-medium text-dim">
+            {RESOLUTION_LABEL[d.status] ?? d.status}
+          </span>
+        )}
+      </div>
+      <p className="mt-2 whitespace-pre-wrap text-sm">{d.summary}</p>
+      {d.resolution_note && (
+        <p className="mt-1 text-[11px] text-dim">비고: {d.resolution_note}</p>
+      )}
+      <p className="mt-1 font-mono text-[11px] text-dim">
+        {new Date(d.created_at).toLocaleString()}
+        {d.resolved_at ? ` · 해결 ${new Date(d.resolved_at).toLocaleString()}` : ""}
+      </p>
+      {isPending && (
+        <div className="mt-2 flex gap-1.5">
+          <ResolveBtn
+            label="Approve"
+            cls="bg-cta text-white"
+            pending={pending}
+            onClick={() => onResolve({ id: d.id, resolution: "approved" })}
+          />
+          <ResolveBtn
+            label="Reject"
+            cls="border border-danger text-danger"
+            pending={pending}
+            onClick={() => onResolve({ id: d.id, resolution: "rejected" })}
+          />
+          <ResolveBtn
+            label="Changes"
+            cls="border border-border3 text-muted"
+            pending={pending}
+            onClick={() => onResolve({ id: d.id, resolution: "changes" })}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResolveBtn({
+  label,
+  cls,
+  pending,
+  onClick,
+}: {
+  label: string;
+  cls: string;
+  pending: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={pending}
+      className={`rounded px-2.5 py-1 text-xs font-medium disabled:opacity-50 ${cls}`}
+    >
+      {label}
+    </button>
   );
 }
